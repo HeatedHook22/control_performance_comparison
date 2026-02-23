@@ -3,10 +3,8 @@ project(bare_quad_sim)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(setup REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(px4_msgs REQUIRED)
-find_package(gazebo_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -17,14 +15,13 @@ find_package(tf2 REQUIRED)
 
 # add executables
 add_executable(single_quad 
-  src/offboard_control.cpp
-  #src/offboard_control_modified.cpp # modified template
+  #src/offboard_control.cpp
+  src/offboard_controller.cpp
 )
 
 ament_target_dependencies(single_quad 
   rclcpp 
   px4_msgs 
-  gazebo_msgs 
   geometry_msgs 
   tf2
 )

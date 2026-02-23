@@ -94,7 +94,6 @@ def generate_launch_description():
             output='screen'
         ),
 
-
         # Start Micro XRCE-DDS Agent for ROS2 <--> PX4 communication
         ExecuteProcess(
             cmd=['MicroXRCEAgent', 'udp4', '-p', '8888'],
