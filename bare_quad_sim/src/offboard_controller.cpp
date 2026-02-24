@@ -30,168 +30,18 @@
  *
  ****************************************************************************/
 
-/**
- * @brief Offboard control example
- * @file offboard_control.cpp
- * @addtogroup examples
- * @author Mickey Cowden <info@cowden.tech>
- * @author Nuno Marques <nuno.marques@dronesolutions.io>
- */
-
-#include <px4_msgs/msg/offboard_control_mode.hpp>
-#include <px4_msgs/msg/trajectory_setpoint.hpp>
-#include <px4_msgs/msg/vehicle_attitude.hpp>
-#include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
-#include <px4_msgs/msg/vehicle_command.hpp>
-#include <px4_msgs/msg/vehicle_control_mode.hpp>
-#include <px4_msgs/msg/vehicle_local_position.hpp>
-#include <px4_msgs/msg/vehicle_rates_setpoint.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <stdint.h>
 
 #include <chrono>
 #include <iostream>
 
-// My includes
-#include <eigen3/Eigen/Eigen>
-#include <eigen3/Eigen/Geometry>
-#include <math.h>
-#include <memory>
+#include "offboard_controller.h"
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
 using std::placeholders::_1;
-
-class OffboardControl : public rclcpp::Node {
-  public:
-    OffboardControl() : Node("offboard_control") {
-        rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
-        auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile);
-
-        offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
-        trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
-        vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
-        vehicle_attitude_setpoint_publisher_ = this->create_publisher<VehicleAttitudeSetpoint>("/fmu/in/vehicle_attitude_setpoint_v1", 10);
-        vehicle_rates_setpoint_publisher_ = this->create_publisher<VehicleRatesSetpoint>("/fmu/in/vehicle_rates_setpoint", 10);
-
-        vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
-            "/fmu/out/vehicle_local_position_v1", qos, std::bind(&OffboardControl::vehicle_local_position_callback, this, _1));
-        vehicle_attitude_subscription_ = this->create_subscription<VehicleAttitude>("/fmu/out/vehicle_attitude", qos,
-                                                                                    std::bind(&OffboardControl::vehicle_attitude_callback, this, _1));
-
-        offboard_setpoint_counter_ = 0;
-
-        auto timer_callback = [this]() -> void {
-            if (offboard_setpoint_counter_ == 10) {
-                // Change to Offboard mode after 10 setpoints
-                this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
-
-                // Arm the vehicle
-                this->arm();
-            }
-
-            _last_time = _current_time;
-            _current_time = this->now();
-            RCLCPP_INFO(this->get_logger(), "ct-lt: %f, dt: %f", _current_time.seconds() - _last_time.seconds(), _dt);
-
-            update_control();
-
-            // offboard_control_mode needs to be paired with trajectory_setpoint
-            publish_offboard_control_mode();
-
-            if (_enable_position_cmd)
-                publish_position_setpoint();
-            else if (_enable_velocity_cmd)
-                publish_velocity_setpoint();
-            else if (_enable_acceleration_cmd)
-                publish_acceleration_setpoint();
-            else if (_enable_attitude_cmd)
-                publish_attitude_setpoint();
-            else if (_enable_rate_cmd)
-                publish_rates_setpoint();
-
-            // stop the counter after reaching 11
-            if (offboard_setpoint_counter_ < 11) {
-                offboard_setpoint_counter_++;
-            }
-        };
-        timer_ = this->create_wall_timer(100ms, timer_callback);
-
-        _g << 0.0, 0.0, 9.80665;
-        _m = 2.064;
-        _dt = 0.1;
-        _pd << 0.0, 0.0, -5.0;
-        _vd << 0.0, 0.0, 0.0;
-        _ad << 0.0, 0.0, 0.0;
-        _Kp << 5, 5, 10;
-        _Kv << 2, 2, 4;
-        _Kvi << 0.4, 0.4, 2;
-        _v_int_limit << 5.0, 5.0, 5.0;
-        _Katt << 6.5, 6.5, 2.8;
-    }
-
-    void arm();
-    void disarm();
-
-  private:
-    // Offboard Mode
-    rclcpp::TimerBase::SharedPtr timer_;
-    std::atomic<uint64_t> timestamp_;    //!< common synced timestamped
-    uint64_t offboard_setpoint_counter_; //!< counter for the number of setpoints sent
-    void publish_offboard_control_mode();
-    void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0);
-
-    // publishers
-    rclcpp::Publisher<OffboardControlMode>::SharedPtr offboard_control_mode_publisher_;
-    rclcpp::Publisher<VehicleCommand>::SharedPtr vehicle_command_publisher_;
-    rclcpp::Publisher<TrajectorySetpoint>::SharedPtr trajectory_setpoint_publisher_;
-    rclcpp::Publisher<VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_publisher_;
-    rclcpp::Publisher<VehicleRatesSetpoint>::SharedPtr vehicle_rates_setpoint_publisher_;
-    // subscribers
-    rclcpp::Subscription<VehicleLocalPosition>::SharedPtr vehicle_local_position_subscription_;
-    rclcpp::Subscription<VehicleAttitude>::SharedPtr vehicle_attitude_subscription_;
-
-    // control mode
-    bool _enable_position_cmd = false;
-    bool _enable_velocity_cmd = false;
-    bool _enable_acceleration_cmd = false;
-    bool _enable_velocity_integrator = false;
-    bool _enable_attitude_cmd = false;
-    bool _enable_rate_cmd = true;
-
-    // Control
-    void update_control();
-    rclcpp::Time _current_time, _last_time;
-    double _dt;
-    Eigen::Vector3d _ep, _ev;
-
-    // Physical Parameters
-    Eigen::Vector3d _g;
-    double _m;
-
-    // Position & Velocity
-    Eigen::Vector3d _p, _v, _a, _pd, _vd, _ad, _Kp, _Kv, _a_cmd, _u;
-    Eigen::Vector3d _v_int, _Kvi, _v_int_limit;
-    void vehicle_local_position_callback(const VehicleLocalPosition &msg);
-    void publish_position_setpoint();
-    void publish_velocity_setpoint();
-    void publish_acceleration_setpoint();
-
-    // Attitude & Angular Rate Thrust
-    Eigen::Vector4d _q, _qd;
-    Eigen::Vector3d _omega, _omegad, _Katt;
-    double _yawd = M_PI * 0.5;
-    float _thrustd, _thrustdn; // thrust in force, normalized thrust
-    void vehicle_attitude_callback(const VehicleAttitude &msg);
-    Eigen::Vector4d acc2quaternion(const Eigen::Vector3d &vector_acc, const double &yaw);
-    inline Eigen::Vector4d rot2Quaternion(const Eigen::Matrix3d &R);
-    Eigen::Vector3d compute_rates_setpoint(Eigen::Vector4d &curr_att, const Eigen::Vector4d &ref_att, const Eigen::Vector3d &K_att);
-    inline Eigen::Vector4d quatMultiplication(const Eigen::Vector4d &q, const Eigen::Vector4d &p);
-    inline Eigen::Matrix3d quat2RotMatrix(const Eigen::Vector4d &q);
-    void publish_attitude_setpoint();
-    void publish_rates_setpoint();
-};
 
 int main(int argc, char *argv[]) {
     std::cout << "Starting offboard control node..." << std::endl;
@@ -201,6 +51,72 @@ int main(int argc, char *argv[]) {
 
     rclcpp::shutdown();
     return 0;
+}
+
+OffboardControl::OffboardControl() : Node("offboard_control") {
+    rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
+    auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile);
+
+    offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
+    trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
+    vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
+    att_rate_ctrl.vehicle_attitude_setpoint_publisher_ = this->create_publisher<VehicleAttitudeSetpoint>("/fmu/in/vehicle_attitude_setpoint_v1", 10);
+    att_rate_ctrl.vehicle_rates_setpoint_publisher_ = this->create_publisher<VehicleRatesSetpoint>("/fmu/in/vehicle_rates_setpoint", 10);
+
+    vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
+        "/fmu/out/vehicle_local_position_v1", qos, std::bind(&OffboardControl::vehicle_local_position_callback, this, _1));
+    att_rate_ctrl.vehicle_attitude_subscription_ = this->create_subscription<VehicleAttitude>(
+        "/fmu/out/vehicle_attitude", qos, [this](const px4_msgs::msg::VehicleAttitude &msg) { att_rate_ctrl.vehicle_attitude_callback(msg); });
+
+    offboard_setpoint_counter_ = 0;
+
+    auto timer_callback = [this]() -> void {
+        if (offboard_setpoint_counter_ == 10) {
+            // Change to Offboard mode after 10 setpoints
+            this->publish_vehicle_command(VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1, 6);
+
+            // Arm the vehicle
+            this->arm();
+        }
+
+        _last_time = _current_time;
+        _current_time = this->now();
+        RCLCPP_INFO(this->get_logger(), "ct-lt: %f, dt: %f", _current_time.seconds() - _last_time.seconds(), _dt);
+
+        update_control();
+
+        // offboard_control_mode needs to be paired with trajectory_setpoint
+        publish_offboard_control_mode();
+
+        timestamp = this->get_clock()->now().nanoseconds() / 1000;
+        if (_enable_position_cmd)
+            publish_position_setpoint();
+        else if (_enable_velocity_cmd)
+            publish_velocity_setpoint();
+        else if (_enable_acceleration_cmd)
+            publish_acceleration_setpoint();
+        else if (_enable_attitude_cmd)
+            att_rate_ctrl.publish_attitude_setpoint(timestamp);
+        else if (_enable_rate_cmd)
+            att_rate_ctrl.publish_rates_setpoint(timestamp);
+
+        // stop the counter after reaching 11
+        if (offboard_setpoint_counter_ < 11) {
+            offboard_setpoint_counter_++;
+        }
+    };
+    timer_ = this->create_wall_timer(100ms, timer_callback);
+
+    _g << 0.0, 0.0, 9.80665;
+    _m = 2.064;
+    _dt = 0.1;
+    _pd << 0.0, 0.0, -5.0;
+    _vd << 0.0, 0.0, 0.0;
+    _ad << 0.0, 0.0, 0.0;
+    _Kp << 5, 5, 10;
+    _Kv << 2, 2, 4;
+    _Kvi << 0.4, 0.4, 2;
+    _v_int_limit << 5.0, 5.0, 5.0;
 }
 
 /**
@@ -266,7 +182,7 @@ void OffboardControl::publish_vehicle_command(uint16_t command, float param1, fl
 void OffboardControl::publish_position_setpoint() {
     TrajectorySetpoint msg{};
     msg.position = {0.0, 0.0, -5.0};
-    msg.yaw = _yawd;
+    msg.yaw = att_rate_ctrl._yawd;
     msg.yawspeed = NAN;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     trajectory_setpoint_publisher_->publish(msg);
@@ -278,7 +194,7 @@ void OffboardControl::publish_velocity_setpoint() {
     msg.position = {NAN, NAN, NAN};
     Eigen::Vector3f epf = (_pd - _p).cast<float>();
     msg.velocity = {epf(0), epf(1), epf(2)};
-    msg.yaw = _yawd;
+    msg.yaw = att_rate_ctrl._yawd;
     msg.yawspeed = NAN;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     trajectory_setpoint_publisher_->publish(msg);
@@ -291,7 +207,7 @@ void OffboardControl::publish_acceleration_setpoint() {
     msg.velocity = {NAN, NAN, NAN};
     Eigen::Vector3f _a_cmdf = _a_cmd.cast<float>();
     msg.acceleration = {_a_cmdf.x(), _a_cmdf.y(), _a_cmdf.z()};
-    msg.yaw = _yawd;
+    msg.yaw = att_rate_ctrl._yawd;
     msg.yawspeed = NAN;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     trajectory_setpoint_publisher_->publish(msg);
@@ -309,16 +225,6 @@ void OffboardControl::vehicle_local_position_callback(const VehicleLocalPosition
     _a.x() = msg.ax;
     _a.y() = msg.ay;
     _a.z() = msg.az;
-}
-
-/* ============================== Attitude ============================== */
-
-void OffboardControl::vehicle_attitude_callback(const VehicleAttitude &msg) {
-    // RCLCPP_INFO(this->get_logger(), "attitude: %f", msg.q[0]);
-    _q(0) = msg.q[0];
-    _q(1) = msg.q[1];
-    _q(2) = msg.q[2];
-    _q(3) = msg.q[3];
 }
 
 void OffboardControl::update_control() {
@@ -350,7 +256,12 @@ void OffboardControl::update_control() {
     RCLCPP_INFO(this->get_logger(), "_u: %f, %f, %f", _u.x(), _u.y(), _u.z());
 
     // Convert acceleration _u to desired attitudes _qd
-    _qd = acc2quaternion(_u, _yawd);
+    auto &_qd = att_rate_ctrl._qd;
+    auto &_thrustd = att_rate_ctrl._thrustd;
+    auto &_thrustdn = att_rate_ctrl._thrustdn;
+    auto &_omegad = att_rate_ctrl._omegad;
+
+    _qd = att_rate_ctrl.acc2quaternion(_u, att_rate_ctrl._yawd);
     RCLCPP_INFO(this->get_logger(), "_qd: %f, %f, %f, %f", _qd(0), _qd.x(), _qd.y(), _qd.z());
 
     // Thrust command
@@ -362,111 +273,6 @@ void OffboardControl::update_control() {
     RCLCPP_INFO(this->get_logger(), "_thrustdn: %f", _thrustdn);
 
     // Angular Rate
-    _omegad = compute_rates_setpoint(_q, _qd, _Katt);
+    att_rate_ctrl._omegad = att_rate_ctrl.compute_rates_setpoint(att_rate_ctrl._q, _qd, att_rate_ctrl._Katt);
     RCLCPP_INFO(this->get_logger(), "_omegad: %f, %f, %f", _omegad.x(), _omegad.y(), _omegad.z());
-}
-
-Eigen::Vector4d OffboardControl::acc2quaternion(const Eigen::Vector3d &vector_acc, const double &yaw) {
-    Eigen::Vector4d quat;
-    Eigen::Vector3d zb_des, yb_des, xb_des, proj_xb_des;
-    Eigen::Matrix3d rotmat;
-
-    proj_xb_des << std::cos(yaw), std::sin(yaw), 0.0;
-
-    zb_des = -vector_acc / vector_acc.norm();
-    yb_des = zb_des.cross(proj_xb_des) / (zb_des.cross(proj_xb_des)).norm();
-    xb_des = yb_des.cross(zb_des) / (yb_des.cross(zb_des)).norm();
-
-    RCLCPP_INFO(this->get_logger(), "proj_xb_des: %f, %f, %f", proj_xb_des(0), proj_xb_des(1), proj_xb_des(2));
-    RCLCPP_INFO(this->get_logger(), "zb_des: %f, %f, %f", zb_des(0), zb_des(1), zb_des(2));
-    RCLCPP_INFO(this->get_logger(), "yb_des: %f, %f, %f", yb_des(0), yb_des(1), yb_des(2));
-    RCLCPP_INFO(this->get_logger(), "xb_des: %f, %f, %f", xb_des(0), xb_des(1), xb_des(2));
-
-    rotmat << xb_des(0), yb_des(0), zb_des(0), xb_des(1), yb_des(1), zb_des(1), xb_des(2), yb_des(2), zb_des(2);
-    quat = rot2Quaternion(rotmat);
-
-    return quat;
-}
-
-inline Eigen::Vector4d OffboardControl::rot2Quaternion(const Eigen::Matrix3d &R) {
-    Eigen::Vector4d quat;
-    double tr = R.trace();
-    if (tr > 0.0) {
-        double S = sqrt(tr + 1.0) * 2.0; // S=4*qw
-        quat(0) = 0.25 * S;
-        quat(1) = (R(2, 1) - R(1, 2)) / S;
-        quat(2) = (R(0, 2) - R(2, 0)) / S;
-        quat(3) = (R(1, 0) - R(0, 1)) / S;
-    } else if ((R(0, 0) > R(1, 1)) & (R(0, 0) > R(2, 2))) {
-        double S = sqrt(1.0 + R(0, 0) - R(1, 1) - R(2, 2)) * 2.0; // S=4*qx
-        quat(0) = (R(2, 1) - R(1, 2)) / S;
-        quat(1) = 0.25 * S;
-        quat(2) = (R(0, 1) + R(1, 0)) / S;
-        quat(3) = (R(0, 2) + R(2, 0)) / S;
-    } else if (R(1, 1) > R(2, 2)) {
-        double S = sqrt(1.0 + R(1, 1) - R(0, 0) - R(2, 2)) * 2.0; // S=4*qy
-        quat(0) = (R(0, 2) - R(2, 0)) / S;
-        quat(1) = (R(0, 1) + R(1, 0)) / S;
-        quat(2) = 0.25 * S;
-        quat(3) = (R(1, 2) + R(2, 1)) / S;
-    } else {
-        double S = sqrt(1.0 + R(2, 2) - R(0, 0) - R(1, 1)) * 2.0; // S=4*qz
-        quat(0) = (R(1, 0) - R(0, 1)) / S;
-        quat(1) = (R(0, 2) + R(2, 0)) / S;
-        quat(2) = (R(1, 2) + R(2, 1)) / S;
-        quat(3) = 0.25 * S;
-    }
-    return quat;
-}
-
-Eigen::Vector3d OffboardControl::compute_rates_setpoint(Eigen::Vector4d &curr_att, const Eigen::Vector4d &ref_att, const Eigen::Vector3d &K_att) {
-    Eigen::Vector3d des_rate;
-    const Eigen::Vector4d inverse(1.0, -1.0, -1.0, -1.0);
-    const Eigen::Vector4d q_inv = inverse.asDiagonal() * curr_att;
-    const Eigen::Vector4d qe = quatMultiplication(q_inv, ref_att);
-    des_rate(0) = 2 * K_att(0) * std::copysign(1.0, qe(0)) * qe(1);
-    des_rate(1) = 2 * K_att(1) * std::copysign(1.0, qe(0)) * qe(2);
-    des_rate(2) = 2 * K_att(2) * std::copysign(1.0, qe(0)) * qe(3);
-    return des_rate;
-}
-
-inline Eigen::Vector4d OffboardControl::quatMultiplication(const Eigen::Vector4d &q, const Eigen::Vector4d &p) {
-    Eigen::Vector4d quat;
-    quat << p(0) * q(0) - p(1) * q(1) - p(2) * q(2) - p(3) * q(3), p(0) * q(1) + p(1) * q(0) - p(2) * q(3) + p(3) * q(2),
-        p(0) * q(2) + p(1) * q(3) + p(2) * q(0) - p(3) * q(1), p(0) * q(3) - p(1) * q(2) + p(2) * q(1) + p(3) * q(0);
-    return quat;
-}
-
-inline Eigen::Matrix3d OffboardControl::quat2RotMatrix(const Eigen::Vector4d &q) {
-    Eigen::Matrix3d rotmat;
-    rotmat << q(0) * q(0) + q(1) * q(1) - q(2) * q(2) - q(3) * q(3), 2 * q(1) * q(2) - 2 * q(0) * q(3), 2 * q(0) * q(2) + 2 * q(1) * q(3),
-
-        2 * q(0) * q(3) + 2 * q(1) * q(2), q(0) * q(0) - q(1) * q(1) + q(2) * q(2) - q(3) * q(3), 2 * q(2) * q(3) - 2 * q(0) * q(1),
-
-        2 * q(1) * q(3) - 2 * q(0) * q(2), 2 * q(0) * q(1) + 2 * q(2) * q(3), q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
-    return rotmat;
-}
-
-void OffboardControl::publish_attitude_setpoint() {
-    VehicleAttitudeSetpoint msg{};
-    Eigen::Vector4f _qdf = _qd.cast<float>();
-    msg.q_d = {_qdf(0), _qdf(1), _qdf(2), _qdf(3)};
-    msg.thrust_body = {0.0, 0.0, _thrustdn};
-
-    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    vehicle_attitude_setpoint_publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Attitude command send");
-}
-
-void OffboardControl::publish_rates_setpoint() {
-    VehicleRatesSetpoint msg{};
-    Eigen::Vector3f _omegadf = _omegad.cast<float>();
-    msg.roll = _omegadf(0);
-    msg.pitch = _omegadf(1);
-    msg.yaw = _omegadf(2);
-    msg.thrust_body = {0.0, 0.0, _thrustdn};
-
-    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    vehicle_rates_setpoint_publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Angular rates command send");
 }

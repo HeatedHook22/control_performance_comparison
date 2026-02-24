@@ -17,7 +17,10 @@ find_package(tf2 REQUIRED)
 add_executable(single_quad 
   #src/offboard_control.cpp
   src/offboard_controller.cpp
+  src/attitude_rate_control.cpp
 )
+
+include_directories(include)
 
 ament_target_dependencies(single_quad 
   rclcpp 
