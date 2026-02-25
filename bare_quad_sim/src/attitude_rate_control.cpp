@@ -4,7 +4,6 @@
 attitude_rates::attitude_rates() { _Katt << 6.5, 6.5, 2.8; }
 
 void attitude_rates::vehicle_attitude_callback(const px4_msgs::msg::VehicleAttitude &msg) {
-    // RCLCPP_INFO(this->get_logger(), "attitude: %f", msg.q[0]);
     _q(0) = msg.q[0];
     _q(1) = msg.q[1];
     _q(2) = msg.q[2];

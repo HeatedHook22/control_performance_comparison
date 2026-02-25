@@ -67,10 +67,15 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
 
     // Subscribers
     pos_vel_acc_ctrl.vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
-        "/fmu/out/vehicle_local_position_v1", qos,
-        [this](const px4_msgs::msg::VehicleLocalPosition &msg) { pos_vel_acc_ctrl.vehicle_local_position_callback(msg); });
-    att_rate_ctrl.vehicle_attitude_subscription_ = this->create_subscription<VehicleAttitude>(
-        "/fmu/out/vehicle_attitude", qos, [this](const px4_msgs::msg::VehicleAttitude &msg) { att_rate_ctrl.vehicle_attitude_callback(msg); });
+        "/fmu/out/vehicle_local_position_v1", qos, [this](const px4_msgs::msg::VehicleLocalPosition &msg) {
+            // RCLCPP_INFO(this->get_logger(), "position: %f", msg.x);
+            pos_vel_acc_ctrl.vehicle_local_position_callback(msg);
+        });
+    att_rate_ctrl.vehicle_attitude_subscription_ =
+        this->create_subscription<VehicleAttitude>("/fmu/out/vehicle_attitude", qos, [this](const px4_msgs::msg::VehicleAttitude &msg) {
+            // RCLCPP_INFO(this->get_logger(), "attitude: %f", msg.q[0]);
+            att_rate_ctrl.vehicle_attitude_callback(msg);
+        });
 
     offboard_setpoint_counter_ = 0;
 
@@ -170,8 +175,8 @@ void OffboardControl::publish_vehicle_command(uint16_t command, float param1, fl
 
 void OffboardControl::update_control() {
     // p, v,  and errors
-    auto &_p = pos_vel_acc_ctrl._pd;
-    auto &_v = pos_vel_acc_ctrl._pd;
+    auto &_p = pos_vel_acc_ctrl._p;
+    auto &_v = pos_vel_acc_ctrl._v;
 
     RCLCPP_INFO(this->get_logger(), "p: %f, %f, %f", _p(0), _p(1), _p(2));
     RCLCPP_INFO(this->get_logger(), "v: %f, %f, %f", _v(0), _v(1), _v(2));

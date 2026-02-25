@@ -52,7 +52,6 @@ void pos_vel_acc::publish_acceleration_setpoint(uint64_t timestamp) {
 }
 
 void pos_vel_acc::vehicle_local_position_callback(const px4_msgs::msg::VehicleLocalPosition &msg) {
-    // // RCLCPP_INFO(this->get_logger(), "position: %f", msg.x);
     _p.x() = msg.x;
     _p.y() = msg.y;
     _p.z() = msg.z;
