@@ -12,14 +12,12 @@
 #include <eigen3/Eigen/Eigen>
 
 class attitude_rates {
-  private:
   public:
     attitude_rates();
 
     // Attitude & Angular Rate Thrust
     Eigen::Vector4d _q, _qd;
     Eigen::Vector3d _omega, _omegad, _Katt;
-    double _yawd = M_PI * 0.5;
     float _thrustd, _thrustdn; // thrust in force, normalized thrust
     void vehicle_attitude_callback(const px4_msgs::msg::VehicleAttitude &msg);
     Eigen::Vector4d acc2quaternion(const Eigen::Vector3d &vector_acc, const double &yaw);
@@ -37,4 +35,6 @@ class attitude_rates {
 
     // SUB
     rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr vehicle_attitude_subscription_;
+
+  private:
 };

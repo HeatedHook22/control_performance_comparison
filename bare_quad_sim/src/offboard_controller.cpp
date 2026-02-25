@@ -57,14 +57,18 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
     rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
     auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile);
 
+    // Publishers
     offboard_control_mode_publisher_ = this->create_publisher<OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
-    trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
+
+    pos_vel_acc_ctrl.trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     att_rate_ctrl.vehicle_attitude_setpoint_publisher_ = this->create_publisher<VehicleAttitudeSetpoint>("/fmu/in/vehicle_attitude_setpoint_v1", 10);
     att_rate_ctrl.vehicle_rates_setpoint_publisher_ = this->create_publisher<VehicleRatesSetpoint>("/fmu/in/vehicle_rates_setpoint", 10);
 
-    vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
-        "/fmu/out/vehicle_local_position_v1", qos, std::bind(&OffboardControl::vehicle_local_position_callback, this, _1));
+    // Subscribers
+    pos_vel_acc_ctrl.vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
+        "/fmu/out/vehicle_local_position_v1", qos,
+        [this](const px4_msgs::msg::VehicleLocalPosition &msg) { pos_vel_acc_ctrl.vehicle_local_position_callback(msg); });
     att_rate_ctrl.vehicle_attitude_subscription_ = this->create_subscription<VehicleAttitude>(
         "/fmu/out/vehicle_attitude", qos, [this](const px4_msgs::msg::VehicleAttitude &msg) { att_rate_ctrl.vehicle_attitude_callback(msg); });
 
@@ -84,17 +88,15 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
         RCLCPP_INFO(this->get_logger(), "ct-lt: %f, dt: %f", _current_time.seconds() - _last_time.seconds(), _dt);
 
         update_control();
-
-        // offboard_control_mode needs to be paired with trajectory_setpoint
         publish_offboard_control_mode();
 
         timestamp = this->get_clock()->now().nanoseconds() / 1000;
         if (_enable_position_cmd)
-            publish_position_setpoint();
+            pos_vel_acc_ctrl.publish_position_setpoint(timestamp);
         else if (_enable_velocity_cmd)
-            publish_velocity_setpoint();
+            pos_vel_acc_ctrl.publish_velocity_setpoint(timestamp);
         else if (_enable_acceleration_cmd)
-            publish_acceleration_setpoint();
+            pos_vel_acc_ctrl.publish_acceleration_setpoint(timestamp);
         else if (_enable_attitude_cmd)
             att_rate_ctrl.publish_attitude_setpoint(timestamp);
         else if (_enable_rate_cmd)
@@ -107,16 +109,10 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
     };
     timer_ = this->create_wall_timer(100ms, timer_callback);
 
+    // Set Physical Parameters
     _g << 0.0, 0.0, 9.80665;
     _m = 2.064;
     _dt = 0.1;
-    _pd << 0.0, 0.0, -5.0;
-    _vd << 0.0, 0.0, 0.0;
-    _ad << 0.0, 0.0, 0.0;
-    _Kp << 5, 5, 10;
-    _Kv << 2, 2, 4;
-    _Kvi << 0.4, 0.4, 2;
-    _v_int_limit << 5.0, 5.0, 5.0;
 }
 
 /**
@@ -172,87 +168,45 @@ void OffboardControl::publish_vehicle_command(uint16_t command, float param1, fl
     vehicle_command_publisher_->publish(msg);
 }
 
-/* ============================== Position / Velocity ============================== */
-
-/**
- * @brief Publish a trajectory setpoint
- *        For this example, it sends a trajectory setpoint to make the
- *        vehicle hover at 5 meters with a yaw angle of 180 degrees.
- */
-void OffboardControl::publish_position_setpoint() {
-    TrajectorySetpoint msg{};
-    msg.position = {0.0, 0.0, -5.0};
-    msg.yaw = att_rate_ctrl._yawd;
-    msg.yawspeed = NAN;
-    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    trajectory_setpoint_publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Position command send");
-}
-
-void OffboardControl::publish_velocity_setpoint() {
-    TrajectorySetpoint msg{};
-    msg.position = {NAN, NAN, NAN};
-    Eigen::Vector3f epf = (_pd - _p).cast<float>();
-    msg.velocity = {epf(0), epf(1), epf(2)};
-    msg.yaw = att_rate_ctrl._yawd;
-    msg.yawspeed = NAN;
-    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    trajectory_setpoint_publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Velocity command send");
-}
-
-void OffboardControl::publish_acceleration_setpoint() {
-    TrajectorySetpoint msg{};
-    msg.position = {NAN, NAN, NAN};
-    msg.velocity = {NAN, NAN, NAN};
-    Eigen::Vector3f _a_cmdf = _a_cmd.cast<float>();
-    msg.acceleration = {_a_cmdf.x(), _a_cmdf.y(), _a_cmdf.z()};
-    msg.yaw = att_rate_ctrl._yawd;
-    msg.yawspeed = NAN;
-    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    trajectory_setpoint_publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Acceleration command send");
-}
-
-void OffboardControl::vehicle_local_position_callback(const VehicleLocalPosition &msg) {
-    // RCLCPP_INFO(this->get_logger(), "position: %f", msg.x);
-    _p.x() = msg.x;
-    _p.y() = msg.y;
-    _p.z() = msg.z;
-    _v.x() = msg.vx;
-    _v.y() = msg.vy;
-    _v.z() = msg.vz;
-    _a.x() = msg.ax;
-    _a.y() = msg.ay;
-    _a.z() = msg.az;
-}
-
 void OffboardControl::update_control() {
     // p, v,  and errors
+    auto &_p = pos_vel_acc_ctrl._pd;
+    auto &_v = pos_vel_acc_ctrl._pd;
+
     RCLCPP_INFO(this->get_logger(), "p: %f, %f, %f", _p(0), _p(1), _p(2));
     RCLCPP_INFO(this->get_logger(), "v: %f, %f, %f", _v(0), _v(1), _v(2));
 
-    _ep = _pd - _p;
-    _ev = _vd - _v;
+    _ep = pos_vel_acc_ctrl._pd - _p;
+    _ev = pos_vel_acc_ctrl._vd - _v;
 
     RCLCPP_INFO(this->get_logger(), "ep: %f, %f, %f", _ep(0), _ep(1), _ep(2));
     RCLCPP_INFO(this->get_logger(), "ev: %f, %f, %f", _ev(0), _ev(1), _ev(2));
 
     // Integration of velocity errors
+    auto &_v_int = pos_vel_acc_ctrl._v_int;
+
     if (_enable_velocity_integrator) {
         for (int i = 0; i < 3; i++) {
-            if (std::abs(_v_int(i) + (_ev(i)) * _dt) <= _v_int_limit(i))
+            if (std::abs(_v_int(i) + (_ev(i)) * _dt) <= pos_vel_acc_ctrl._v_int_limit(i))
                 _v_int(i) += _ev(i) * _dt;
         }
     }
     RCLCPP_INFO(this->get_logger(), "_v_int: %f, %f, %f", _v_int.x(), _v_int.y(), _v_int.z());
 
     // Auxiliary input
-    _a_cmd = _ad + _Kv.cwiseProduct(_ev) + _Kp.cwiseProduct(_ep) + _Kvi.cwiseProduct(_v_int);
+    auto &_ad = pos_vel_acc_ctrl._ad;
+    auto &_a_cmd = pos_vel_acc_ctrl._a_cmd;
+    auto &_Kv = pos_vel_acc_ctrl._Kv;
+    auto &_Kp = pos_vel_acc_ctrl._Kp;
+    auto &_Kvi = pos_vel_acc_ctrl._Kvi;
+
+    _a_cmd = _ad + _Kv.cwiseProduct(_ev) + _Kp.cwiseProduct(_ep) + _Kvi.cwiseProduct(pos_vel_acc_ctrl._v_int);
     RCLCPP_INFO(this->get_logger(), "_a_cmd: %f, %f, %f", _a_cmd.x(), _a_cmd.y(), _a_cmd.z());
 
     // Gravity compensation
-    _u = _a_cmd - _g;
+    auto &_u = pos_vel_acc_ctrl._u;
+
+    _u = pos_vel_acc_ctrl._a_cmd - _g;
     RCLCPP_INFO(this->get_logger(), "_u: %f, %f, %f", _u.x(), _u.y(), _u.z());
 
     // Convert acceleration _u to desired attitudes _qd
@@ -261,7 +215,7 @@ void OffboardControl::update_control() {
     auto &_thrustdn = att_rate_ctrl._thrustdn;
     auto &_omegad = att_rate_ctrl._omegad;
 
-    _qd = att_rate_ctrl.acc2quaternion(_u, att_rate_ctrl._yawd);
+    _qd = att_rate_ctrl.acc2quaternion(_u, pos_vel_acc_ctrl._yawd);
     RCLCPP_INFO(this->get_logger(), "_qd: %f, %f, %f, %f", _qd(0), _qd.x(), _qd.y(), _qd.z());
 
     // Thrust command

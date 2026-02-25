@@ -18,6 +18,7 @@ add_executable(single_quad
   #src/offboard_control.cpp
   src/offboard_controller.cpp
   src/attitude_rate_control.cpp
+  src/pos_vel_acc_control.cpp
 )
 
 include_directories(include)
