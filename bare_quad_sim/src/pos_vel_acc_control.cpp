@@ -3,7 +3,7 @@
 /* ============================== Position / Velocity ============================== */
 
 pos_vel_acc::pos_vel_acc() {
-    _pd << 0.0, 0.0, -5.0;
+    _pd << 0.0, 0.0, -1.0;
     _vd << 0.0, 0.0, 0.0;
     _ad << 0.0, 0.0, 0.0;
     _Kp << 5, 5, 10;
@@ -18,7 +18,7 @@ pos_vel_acc::pos_vel_acc() {
  */
 void pos_vel_acc::publish_position_setpoint(uint64_t timestamp) {
     px4_msgs::msg::TrajectorySetpoint msg{};
-    msg.position = {0.0, 0.0, -5.0};
+    msg.position = {_pd.cast<float>()(0), _pd.cast<float>()(1), _pd.cast<float>()(2)};
     msg.yaw = _yawd;
     msg.yawspeed = NAN;
     msg.timestamp = timestamp;

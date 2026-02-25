@@ -47,6 +47,12 @@ class OffboardControl : public rclcpp::Node {
     double _dt;
     Eigen::Vector3d _ep, _ev;
 
+    // Control Setpoint Commands
+    uint64_t current_setpoint_step = 0;
+    void set_setpoint();
+    void step_setpoint(const Eigen::Vector3d &pos_sp);
+    bool is_at_setpoint();
+
     // Physical Parameters
     Eigen::Vector3d _g;
     double _m;

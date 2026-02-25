@@ -108,16 +108,16 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
             att_rate_ctrl.publish_rates_setpoint(timestamp);
 
         // stop the counter after reaching 11
-        if (offboard_setpoint_counter_ < 11) {
+        if (offboard_setpoint_counter_ < 110) {
             offboard_setpoint_counter_++;
         }
     };
-    timer_ = this->create_wall_timer(100ms, timer_callback);
+    timer_ = this->create_wall_timer(10ms, timer_callback);
 
     // Set Physical Parameters
     _g << 0.0, 0.0, 9.80665;
     _m = 2.064;
-    _dt = 0.1;
+    _dt = 0.01;
 }
 
 /**
@@ -133,7 +133,8 @@ void OffboardControl::arm() {
  * @brief Send a command to Disarm the vehicle
  */
 void OffboardControl::disarm() {
-    publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
+    // Overrides need to land (21196.0), causing instant disarm, for TESTING IN SIM ONLY
+    publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0, 21196.0);
 
     RCLCPP_INFO(this->get_logger(), "Disarm command send");
 }
@@ -174,6 +175,9 @@ void OffboardControl::publish_vehicle_command(uint16_t command, float param1, fl
 }
 
 void OffboardControl::update_control() {
+    // Get setpoint
+    set_setpoint();
+
     // p, v,  and errors
     auto &_p = pos_vel_acc_ctrl._p;
     auto &_v = pos_vel_acc_ctrl._v;
@@ -235,3 +239,57 @@ void OffboardControl::update_control() {
     att_rate_ctrl._omegad = att_rate_ctrl.compute_rates_setpoint(att_rate_ctrl._q, _qd, att_rate_ctrl._Katt);
     RCLCPP_INFO(this->get_logger(), "_omegad: %f, %f, %f", _omegad.x(), _omegad.y(), _omegad.z());
 }
+
+void OffboardControl::set_setpoint() {
+    switch (current_setpoint_step) {
+    case 0: {
+        Eigen::Vector3d pos_sp(1.f, 2.f, -6.f);
+        step_setpoint(pos_sp);
+        break;
+    }
+    case 1: {
+        break;
+    }
+    default: {
+        // Change modes for landing (smoother for exiting test cases)
+        _enable_position_cmd = true;
+        _enable_velocity_cmd = false;
+        _enable_acceleration_cmd = false;
+        _enable_velocity_integrator = false;
+        _enable_attitude_cmd = false;
+        _enable_rate_cmd = false;
+
+        // Land vehicle
+        Eigen::Vector3d pos_sp(0.f, 0.f, -1.f);
+        step_setpoint(pos_sp);
+
+        if (is_at_setpoint()) {
+            RCLCPP_INFO(this->get_logger(), "DISARMING");
+            disarm();
+        }
+        break;
+    }
+    }
+
+    if (is_at_setpoint()) {
+        current_setpoint_step++;
+    }
+}
+
+bool OffboardControl::is_at_setpoint() {
+    bool at_setpoint = false;
+
+    auto tmp_ep = pos_vel_acc_ctrl._pd - pos_vel_acc_ctrl._p;
+    auto tmp_ev = pos_vel_acc_ctrl._vd - pos_vel_acc_ctrl._v;
+
+    if ((std::abs(tmp_ep(0)) < 5e-2) && (std::abs(tmp_ep(1)) < 5e-2) && (std::abs(tmp_ep(2)) < 5e-2) && (std::abs(tmp_ev(0)) < 5e-2) &&
+        (std::abs(tmp_ev(1)) < 5e-2) && (std::abs(tmp_ev(2)) < 5e-2)) {
+        at_setpoint = true;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "current_setpoint_step: %ld, tmp_ep: %f, %f, %f, tmp_ev: %f, %f, %f", current_setpoint_step, tmp_ep(0), tmp_ep(1),
+                tmp_ep(2), tmp_ev(0), tmp_ev(1), tmp_ev(2));
+    return at_setpoint;
+}
+
+void OffboardControl::step_setpoint(const Eigen::Vector3d &pos_sp) { pos_vel_acc_ctrl._pd = pos_sp; }
