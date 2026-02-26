@@ -8,16 +8,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # ================================
-# 1. Basic tools & ROS 2 Repo setup
+# 1. Basic tools, Git LFS, & ROS 2 Repo setup
 # ================================
 RUN apt update && apt install -y \
     sudo curl git wget build-essential cmake ninja-build \
     python3-pip lsb-release gnupg2 software-properties-common \
-    net-tools iputils-ping \
+    net-tools iputils-ping git-lfs \
     && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" \
     > /etc/apt/sources.list.d/ros2.list
+
+# Initialize Git LFS globally
+RUN git lfs install
 
 # ================================
 # 2. Install ROS 2 Humble & Simulation Tools
@@ -42,8 +45,8 @@ RUN apt install -y \
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
     astyle
 
-# Install Python packages not available in apt, and pin numpy to < 2.0 to avoid matplotlib crashes
-RUN pip3 install "numpy<2" pyros-genmsg
+# Install Python packages not available in apt
+RUN pip3 install pyros-genmsg
 
 # Build uXRCE-DDS Agent (Required for PX4-ROS2 communication)
 WORKDIR /opt
@@ -61,6 +64,10 @@ RUN git clone https://github.com/PX4/PX4-Autopilot.git --recursive
 # Run the PX4 setup script (specifically for simulation)
 WORKDIR /opt/PX4-Autopilot
 RUN ./Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools
+
+# The ubuntu.sh script above automatically pip upgrades dependencies, secretly pushing numpy to 2.x. 
+# We MUST force it back down to 1.x here so matplotlib doesn't crash when plotting data.
+RUN pip3 install --force-reinstall "numpy<2"
 
 # ================================
 # 5. Environment Configuration
