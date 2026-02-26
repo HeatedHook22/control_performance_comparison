@@ -63,6 +63,7 @@ class local_position_plotter(Node):
         ax3.grid(True)
 
         plt.tight_layout()
+        plt.savefig("data_recording/tmp/previous_run.png")
         plt.show()
 
 def main(args=None):
