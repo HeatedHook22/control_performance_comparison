@@ -22,8 +22,6 @@ RUN apt update && apt install -y \
 # ================================
 # 2. Install ROS 2 Humble & Simulation Tools
 # ================================
-# Note: ros-humble-micro-ros-agent is removed from apt; 
-# PX4 now uses the uXRCE-DDS Agent instead.
 RUN apt update && apt install -y \
     ros-humble-desktop \
     ros-humble-gazebo-ros-pkgs \
@@ -35,16 +33,19 @@ RUN apt update && apt install -y \
     libgazebo-dev
 
 # ================================
-# 3. PX4 Dependencies & Micro-ROS Agent (Source Build)
+# 3. PX4 Dependencies & uXRCE Agent
 # ================================
 RUN apt install -y \
     python3-jinja2 python3-numpy python3-empy python3-toml \
-    python3-pyros-genmsg python3-packaging \
+    python3-packaging \
     exiftool genromfs libeigen3-dev libopencv-dev \
-    # Micro-ROS / uXRCE dependencies
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
     astyle
 
-# Build uXRCE-DDS Agent (The modern replacement for micro-ROS agent in PX4)
+# Install Python packages not available in apt, and pin numpy to < 2.0 to avoid matplotlib crashes
+RUN pip3 install "numpy<2" pyros-genmsg
+
+# Build uXRCE-DDS Agent (Required for PX4-ROS2 communication)
 WORKDIR /opt
 RUN git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git \
     && cd Micro-XRCE-DDS-Agent && mkdir build && cd build \
@@ -53,11 +54,12 @@ RUN git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git \
 # ================================
 # 4. Clone PX4 & Setup Workspace
 # ================================
-WORKDIR /workspaces
+# Cloned into /opt to prevent volume shadowing by Codespaces
+WORKDIR /opt
 RUN git clone https://github.com/PX4/PX4-Autopilot.git --recursive
 
 # Run the PX4 setup script (specifically for simulation)
-WORKDIR /workspaces/PX4-Autopilot
+WORKDIR /opt/PX4-Autopilot
 RUN ./Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools
 
 # ================================
@@ -66,8 +68,20 @@ RUN ./Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools
 # Setup rosdep
 RUN rosdep init || true && rosdep update
 
-# Auto-source ROS 2 for the 'vscode' user and root
+# Auto-source ROS 2 
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 
+# ================================
+# 6. Build PX4 ROS 2 Messages (Underlay Workspace)
+# ================================
+WORKDIR /opt/px4_ros_ws/src
+RUN git clone https://github.com/PX4/px4_msgs.git \
+    && git clone https://github.com/PX4/px4_ros_com.git
+
+WORKDIR /opt/px4_ros_ws
+RUN /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build"
+RUN echo "source /opt/px4_ros_ws/install/setup.bash" >> ~/.bashrc
+
+# Ensure the terminal starts in the mounted Codespace directory
 WORKDIR /workspaces
 CMD ["/bin/bash"]

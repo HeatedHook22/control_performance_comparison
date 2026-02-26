@@ -7,11 +7,12 @@
         "--privileged",
         "--network=host"
     ],
-    "postCreateCommand": "echo 'Environment ready. Source ROS with: source /opt/ros/humble/setup.bash'",
+    "postCreateCommand": "git config --global --add safe.directory '*' && echo 'Environment ready. Source ROS with: source /opt/ros/humble/setup.bash'",
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-iot.vscode-ros",
+                "Ranch-Hand-Robotics.rde-ros-2",
+                "Ranch-Hand-Robotics.rde-urdf",
                 "ms-python.python",
                 "ms-vscode.cpptools"
             ]
