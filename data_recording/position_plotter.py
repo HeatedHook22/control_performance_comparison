@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from px4_msgs.msg import VehicleLocalPosition
+from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
 
@@ -70,7 +71,7 @@ def main(args=None):
 
     try:
         rclpy.spin(plotter_node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         print('\nRecording stopped by user.')
     finally:
         # Generate graphs before destroying the ROS context to avoid logger crashes

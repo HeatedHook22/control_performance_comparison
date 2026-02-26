@@ -34,16 +34,22 @@
 #include <stdint.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include "offboard_controller.h"
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
-using std::placeholders::_1;
 
 int main(int argc, char *argv[]) {
+    // MUST BE RUN FROM WITHIN PARENT DIRECTORY
+    std::cout << "Starting recording script..." << std::endl;
+    std::system("python3 data_recording/position_plotter.py &");
+    std::this_thread::sleep_for(2000ms);
+
     std::cout << "Starting offboard control node..." << std::endl;
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
     rclcpp::init(argc, argv);
@@ -248,6 +254,8 @@ void OffboardControl::set_setpoint() {
         break;
     }
     case 1: {
+        Eigen::Vector3d pos_sp(5.f, 8.f, -6.f);
+        step_setpoint(pos_sp);
         break;
     }
     default: {
