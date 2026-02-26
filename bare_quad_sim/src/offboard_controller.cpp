@@ -142,7 +142,10 @@ void OffboardControl::disarm() {
     // Overrides need to land (21196.0), causing instant disarm, for TESTING IN SIM ONLY
     publish_vehicle_command(VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0, 21196.0);
 
-    RCLCPP_INFO(this->get_logger(), "Disarm command send");
+    RCLCPP_INFO(this->get_logger(), "Disarm command send, shutting down");
+
+    // Early shutdown
+    rclcpp::shutdown();
 }
 
 /**

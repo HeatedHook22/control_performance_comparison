@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from px4_msgs.msg import VehicleLocalPosition
+from px4_msgs.msg import OffboardControlMode
 from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
@@ -11,10 +12,17 @@ class local_position_plotter(Node):
         super().__init__('local_position_plotter')
         
         # Subscribe using the Sensor Data QoS profile (Best Effort)
-        self.subscription = self.create_subscription(
+        self.local_pos_subscription = self.create_subscription(
             VehicleLocalPosition,
             '/fmu/out/vehicle_local_position_v1',
             self.position_callback,
+            qos_profile_sensor_data
+        )
+
+        self.offboard_mode_subscription = self.create_subscription(
+            OffboardControlMode,
+            '/fmu/in/offboard_control_mode',
+            self.offboard_callback,
             qos_profile_sensor_data
         )
         
@@ -37,6 +45,11 @@ class local_position_plotter(Node):
         self.x_data.append(msg.x)
         self.y_data.append(msg.y)
         self.z_data.append(msg.z)
+
+    def offboard_callback(self, msg):
+        # WE CONSIDER "POSITION MODE" TIME TO STOP. BE AWARE, SINCE THIS COULD CAUSE A BUG.
+        if msg.position == True:
+            raise KeyboardInterrupt
 
     def generate_graphs(self):
         if not self.times:
