@@ -3,82 +3,71 @@
 # ================================
 FROM ubuntu:22.04
 
+# Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # ================================
-# Basic tools first
+# 1. Basic tools & ROS 2 Repo setup
 # ================================
 RUN apt update && apt install -y \
-    sudo \
-    curl \
-    git \
-    wget \
-    build-essential \
-    cmake \
-    ninja-build \
-    python3-pip \
-    lsb-release \
-    gnupg2 \
-    software-properties-common \
-    net-tools \
-    iputils-ping
-
-# ================================
-# Add ROS 2 Repository
-# ================================
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-    | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg
-
-RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
-    http://packages.ros.org/ros2/ubuntu jammy main" \
+    sudo curl git wget build-essential cmake ninja-build \
+    python3-pip lsb-release gnupg2 software-properties-common \
+    net-tools iputils-ping \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" \
     > /etc/apt/sources.list.d/ros2.list
 
 # ================================
-# Install ROS 2 Humble
+# 2. Install ROS 2 Humble & Simulation Tools
 # ================================
+# Note: ros-humble-micro-ros-agent is removed from apt; 
+# PX4 now uses the uXRCE-DDS Agent instead.
 RUN apt update && apt install -y \
     ros-humble-desktop \
     ros-humble-gazebo-ros-pkgs \
-    ros-humble-micro-ros-agent \
+    ros-humble-ros-gz \
     python3-colcon-common-extensions \
     python3-vcstool \
-    python3-rosdep
-
-# Auto-source ROS
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc
-
-# Initialize rosdep
-RUN rosdep init || true
-RUN rosdep update
+    python3-rosdep \
+    gazebo \
+    libgazebo-dev
 
 # ================================
-# Gazebo Classic
-# ================================
-RUN apt install -y gazebo
-
-# ================================
-# PX4 Dependencies
+# 3. PX4 Dependencies & Micro-ROS Agent (Source Build)
 # ================================
 RUN apt install -y \
-    python3-jinja2 \
-    python3-numpy \
-    python3-empy \
-    python3-toml \
-    exiftool \
-    genromfs \
-    libeigen3-dev \
-    libopencv-dev
+    python3-jinja2 python3-numpy python3-empy python3-toml \
+    python3-pyros-genmsg python3-packaging \
+    exiftool genromfs libeigen3-dev libopencv-dev \
+    # Micro-ROS / uXRCE dependencies
+    astyle
+
+# Build uXRCE-DDS Agent (The modern replacement for micro-ROS agent in PX4)
+WORKDIR /opt
+RUN git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git \
+    && cd Micro-XRCE-DDS-Agent && mkdir build && cd build \
+    && cmake .. && make && make install && ldconfig
 
 # ================================
-# Clone PX4
+# 4. Clone PX4 & Setup Workspace
 # ================================
-WORKDIR /workspace
+WORKDIR /workspaces
 RUN git clone https://github.com/PX4/PX4-Autopilot.git --recursive
 
-WORKDIR /workspace/PX4-Autopilot
-RUN bash ./Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools
+# Run the PX4 setup script (specifically for simulation)
+WORKDIR /workspaces/PX4-Autopilot
+RUN ./Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools
 
-WORKDIR /workspace
+# ================================
+# 5. Environment Configuration
+# ================================
+# Setup rosdep
+RUN rosdep init || true && rosdep update
 
+# Auto-source ROS 2 for the 'vscode' user and root
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+
+WORKDIR /workspaces
 CMD ["/bin/bash"]
