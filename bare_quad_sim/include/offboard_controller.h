@@ -36,10 +36,11 @@ class OffboardControl : public rclcpp::Node {
     // Control mode
     bool _enable_position_cmd = false;
     bool _enable_velocity_cmd = false;
-    bool _enable_acceleration_cmd = true;
-    bool _enable_velocity_integrator = false;
+    bool _enable_acceleration_cmd = false;
     bool _enable_attitude_cmd = false;
-    bool _enable_rate_cmd = false;
+    bool _enable_rate_cmd = true;
+
+    bool _enable_velocity_integrator = false;
 
     // Control
     void update_control();

@@ -47,7 +47,7 @@ using namespace px4_msgs::msg;
 int main(int argc, char *argv[]) {
     // MUST BE RUN FROM WITHIN PARENT DIRECTORY
     std::cout << "Starting recording script..." << std::endl;
-    std::system("python3 data_recording/position_plotter.py &");
+    std::system("python3 data_recording/real_time_recorder.py &");
     std::this_thread::sleep_for(2000ms);
 
     std::cout << "Starting offboard control node..." << std::endl;
