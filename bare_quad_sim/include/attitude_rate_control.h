@@ -25,6 +25,7 @@ class attitude_rates {
     Eigen::Vector3d compute_rates_setpoint(Eigen::Vector4d &curr_att, const Eigen::Vector4d &ref_att, const Eigen::Vector3d &K_att);
     inline Eigen::Vector4d quatMultiplication(const Eigen::Vector4d &q, const Eigen::Vector4d &p);
     inline Eigen::Matrix3d quat2RotMatrix(const Eigen::Vector4d &q);
+    Eigen::Vector4d euler2quaternion(const Eigen::Vector3d &euler_angles);
 
     void publish_attitude_setpoint(uint64_t timestamp);
     void publish_rates_setpoint(uint64_t timestamp);

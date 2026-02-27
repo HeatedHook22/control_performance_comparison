@@ -91,6 +91,29 @@ inline Eigen::Matrix3d attitude_rates::quat2RotMatrix(const Eigen::Vector4d &q) 
     return rotmat;
 }
 
+Eigen::Vector4d attitude_rates::euler2quaternion(const Eigen::Vector3d &euler_angles) {
+    auto roll = euler_angles(0);
+    auto pitch = euler_angles(1);
+    auto yaw = euler_angles(2);
+    // Calculate half angles
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+
+    Eigen::Vector4d q;
+    // PX4 Quaternion order is w, x, y, z
+    // From eq. (19) of "Nonlinear Quadrocopter Attitude Control Technical Report"
+    q(0) = cr * cp * cy + sr * sp * sy; // w
+    q(1) = sr * cp * cy - cr * sp * sy; // x
+    q(2) = cr * sp * cy + sr * cp * sy; // y
+    q(3) = cr * cp * sy - sr * sp * cy; // z
+
+    return q;
+}
+
 void attitude_rates::publish_attitude_setpoint(uint64_t timestamp) {
     px4_msgs::msg::VehicleAttitudeSetpoint msg{};
     Eigen::Vector4f _qdf = _qd.cast<float>();
