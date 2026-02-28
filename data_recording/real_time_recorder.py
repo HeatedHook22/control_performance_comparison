@@ -143,6 +143,22 @@ class local_position_plotter(Node):
             raise KeyboardInterrupt
         self.previous_arming_state = msg.arming_state
 
+    def calculate_rms(self, actual_times, actual_data, sp_times, sp_data):
+        actual_times = np.array(actual_times)
+        actual_data = np.array(actual_data)
+        sp_times = np.array(sp_times)
+        sp_data = np.array(sp_data)
+        valid_mask = (actual_times >= sp_times[0]) & (actual_times <= sp_times[-1])
+        valid_actual_times = actual_times[valid_mask]
+        if len(valid_actual_times) > 1:
+            T = valid_actual_times[-1] - valid_actual_times[0]
+            if T > 0:
+                aligned_sp = np.interp(valid_actual_times, sp_times, sp_data)
+                error = actual_data[valid_mask] - aligned_sp
+                integral = np.trapz(np.square(error), x=valid_actual_times)
+                return np.sqrt(integral / T)
+        return None
+
     def generate_graphs(self):
         if not self.position_times or not self.attitude_times:
             print("No data was received. Is the topic publishing?")
@@ -181,32 +197,14 @@ class local_position_plotter(Node):
             
             # Create a mask to only evaluate actual data while setpoints were being published
             valid_mask = (actual_times >= sp_times[0]) & (actual_times <= sp_times[-1])
-            valid_actual_times = actual_times[valid_mask]
             
-            # Ensure we have enough points to actually calculate an integral
-            if len(valid_actual_times) > 1:
-                # Calculate total duration T
-                T = valid_actual_times[-1] - valid_actual_times[0]
-                
-                # Roll
-                aligned_sp_roll = np.interp(valid_actual_times, sp_times, np.array(self.roll_sp_data))
-                roll_error = np.array(self.roll_data)[valid_mask] - aligned_sp_roll
-                roll_integral = np.trapz(np.square(roll_error), x=valid_actual_times)
-                rms_roll = np.sqrt(roll_integral / T)
+            rms_roll = self.calculate_rms(self.attitude_times, self.roll_data, self.attitude_sp_times, self.roll_sp_data)
+            rms_pitch = self.calculate_rms(self.attitude_times, self.pitch_data, self.attitude_sp_times, self.pitch_sp_data)
+            rms_yaw = self.calculate_rms(self.attitude_times, self.yaw_data, self.attitude_sp_times, self.yaw_sp_data)
+
+            if rms_roll is not None:
                 rms_text_roll = f"RMS Error: {rms_roll:.3f}°"
-
-                # Pitch
-                aligned_sp_pitch = np.interp(valid_actual_times, sp_times, np.array(self.pitch_sp_data))
-                pitch_error = np.array(self.pitch_data)[valid_mask] - aligned_sp_pitch
-                pitch_integral = np.trapz(np.square(pitch_error), x=valid_actual_times)
-                rms_pitch = np.sqrt(pitch_integral / T)
                 rms_text_pitch = f"RMS Error: {rms_pitch:.3f}°"
-
-                # Yaw
-                aligned_sp_yaw = np.interp(valid_actual_times, sp_times, np.array(self.yaw_sp_data))
-                yaw_error = np.array(self.yaw_data)[valid_mask] - aligned_sp_yaw 
-                yaw_integral = np.trapz(np.square(yaw_error), x=valid_actual_times)
-                rms_yaw = np.sqrt(yaw_integral / T)
                 rms_text_yaw = f"RMS Error: {rms_yaw:.3f}°"
             else:
                 print("WARNING: Not enough valid data points to integrate! Skipping RMS.")

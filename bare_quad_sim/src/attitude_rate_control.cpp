@@ -95,6 +95,7 @@ Eigen::Vector4d attitude_rates::euler2quaternion(const Eigen::Vector3d &euler_an
     auto roll = euler_angles(0);
     auto pitch = euler_angles(1);
     auto yaw = euler_angles(2);
+
     // Calculate half angles
     double cr = std::cos(roll * 0.5);
     double sr = std::sin(roll * 0.5);
@@ -128,6 +129,8 @@ void attitude_rates::publish_attitude_setpoint(uint64_t timestamp) {
 void attitude_rates::publish_rates_setpoint(uint64_t timestamp) {
     px4_msgs::msg::VehicleRatesSetpoint msg{};
     Eigen::Vector3f _omegadf = _omegad.cast<float>();
+
+    // Even though PX4 calls them RPY, they are actually the XYZ body rates
     msg.roll = _omegadf(0);
     msg.pitch = _omegadf(1);
     msg.yaw = _omegadf(2);

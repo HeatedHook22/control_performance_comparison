@@ -117,10 +117,12 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
             pos_vel_acc_ctrl.publish_acceleration_setpoint(timestamp);
         else if (_enable_attitude_cmd)
             att_rate_ctrl.publish_attitude_setpoint(timestamp);
-        else if (_enable_rate_cmd)
+        else if (_enable_rate_cmd) {
             att_rate_ctrl.publish_rates_setpoint(timestamp);
 
-        RCLCPP_INFO(this->get_logger(), "thrust: %f", att_rate_ctrl._thrustdn);
+            // We publish this for the python script, but it doesn't affect the control for body rate, since attitude should be FALSE
+            att_rate_ctrl.publish_attitude_setpoint(timestamp);
+        }
 
         // Stop the counter
         if (offboard_setpoint_counter_ < 120) {
@@ -181,6 +183,8 @@ void OffboardControl::set_offboard_control_mode(uint8_t offboard_control_mode) {
     _enable_acceleration_cmd = static_cast<bool>(offboard_control_mode & ACCELERATION);
     _enable_attitude_cmd = static_cast<bool>(offboard_control_mode & ATTITUDE);
     _enable_rate_cmd = static_cast<bool>(offboard_control_mode & BODY_RATE);
+
+    RCLCPP_INFO(this->get_logger(), "Offboard Mode: %d", offboard_control_mode);
 }
 
 /**
@@ -275,22 +279,15 @@ void OffboardControl::set_setpoint() {
         test_gen.step_pos_setpoint(pos_sp);
         break;
     }
+    // case 1: {
+    //     set_offboard_control_mode(BODY_RATE);
+    //     this->sinusoid_rpy_test();
+    //     break;
+    // }
     case 1: {
-        set_offboard_control_mode(BODY_RATE);
-        this->sinusoid_rpy_test();
+        set_offboard_control_mode(ATTITUDE);
+        this->step_rpy_test();
         break;
-    }
-    case 2: {
-        // Return to starting position
-        // set_offboard_control_mode(POSITION);
-        // Eigen::Vector3d pos_sp(0.f, 0.f, -10.f);
-        // test_gen.step_pos_setpoint(pos_sp);
-        // break;
-    }
-    case 3: {
-        // set_offboard_control_mode(BODY_RATE);
-        // this->step_rpy_test();
-        // break;
     }
     default: {
         // Change modes for landing (smoother for exiting test cases)
