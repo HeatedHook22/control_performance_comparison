@@ -129,8 +129,6 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
     };
     timer_ = this->create_wall_timer(10ms, timer_callback);
 
-    set_offboard_control_mode(POSITION);
-
     // Set Physical Parameters
     _g << 0.0, 0.0, 9.80665;
     _m = 2.064;
@@ -272,14 +270,27 @@ void OffboardControl::set_setpoint() {
     switch (current_setpoint_step) {
     case 0: {
         // Starting position
+        set_offboard_control_mode(POSITION);
         Eigen::Vector3d pos_sp(0.f, 0.f, -10.f);
         test_gen.step_pos_setpoint(pos_sp);
         break;
     }
     case 1: {
-        this->attitude_step_roll_test();
-        // this->body_rate_step_roll_test();
+        set_offboard_control_mode(BODY_RATE);
+        this->sinusoid_rpy_test();
         break;
+    }
+    case 2: {
+        // Return to starting position
+        // set_offboard_control_mode(POSITION);
+        // Eigen::Vector3d pos_sp(0.f, 0.f, -10.f);
+        // test_gen.step_pos_setpoint(pos_sp);
+        // break;
+    }
+    case 3: {
+        // set_offboard_control_mode(BODY_RATE);
+        // this->step_rpy_test();
+        // break;
     }
     default: {
         // Change modes for landing (smoother for exiting test cases)
@@ -306,10 +317,9 @@ void OffboardControl::set_setpoint() {
     }
 }
 
-void OffboardControl::attitude_step_roll_test() {
+void OffboardControl::step_rpy_test() {
     // Setup timed finish
     static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
-    set_offboard_control_mode(ATTITUDE);
 
     static bool compensation_set = false;
     if (!compensation_set) {
@@ -319,10 +329,13 @@ void OffboardControl::attitude_step_roll_test() {
         compensation_set = true;
     }
 
-    Eigen::Vector3d roll_sp(radians_sp, 0.f, M_PI_2);
-    test_gen.step_roll_setpoint(roll_sp);
+    Eigen::Vector3d euler_sp(radians_sp, 0.f, M_PI_2);
+    test_gen.step_rpy_setpoint(euler_sp);
 
-    // Set impossible setpoint for testing (not used at this point to stop)
+    // Calculate required body rates from the attitude error, only affects body_rate control mode
+    att_rate_ctrl._omegad = att_rate_ctrl.compute_rates_setpoint(att_rate_ctrl._q, att_rate_ctrl._qd, att_rate_ctrl._Katt);
+
+    // Set impossible setpoint for testing (to avoid set_setpoint() from incrementing current_setpoint_step)
     Eigen::Vector3d pos_sp(0.f, 0.f, 0.f);
     test_gen.step_pos_setpoint(pos_sp);
 
@@ -336,30 +349,29 @@ void OffboardControl::attitude_step_roll_test() {
     bypass_update_control = true; // Disable control updates to hold attitude setpoint
 }
 
-void OffboardControl::body_rate_step_roll_test() {
+void OffboardControl::sinusoid_rpy_test() {
     // Setup timed finish
-    static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
-    set_offboard_control_mode(BODY_RATE);
+    static auto sin_step_start_time = std::chrono::high_resolution_clock::now();
 
-    static bool compensation_set = false;
-    if (!compensation_set) {
-        const double cos_tilt = std::cos(radians_sp);
-        const auto locked_test_thrust = att_rate_ctrl._thrustdn / cos_tilt; // Compensate for loss of vertical thrust due to tilt, leave constant
-        att_rate_ctrl._thrustdn = std::max(locked_test_thrust, -1.0);
-        compensation_set = true;
-    }
+    Eigen::Vector3d euler_sp_amplitude(radians_sp, 0.f, 0.f);
+    test_gen.sinusoid_rpy_setpoint(euler_sp_amplitude, 0.25);
 
-    Eigen::Vector3d roll_sp(radians_sp, 0.f, M_PI_2);
-    test_gen.step_roll_setpoint(roll_sp);
+    double qx = att_rate_ctrl._q.x();
+    double qy = att_rate_ctrl._q.y();
+    double cos_tilt = std::max(1.0 - 2.0 * (qx * qx + qy * qy), 0.5);
 
-    // Calculate required body rates from the attitude error
+    // Add an active brake using the drone's actual Z-velocity to fight rising
+    double z_vel_damping = 30.0 * pos_vel_acc_ctrl._v(2);
+
+    att_rate_ctrl._thrustd = -(pos_vel_acc_ctrl._u.norm() / cos_tilt) - z_vel_damping;
+    att_rate_ctrl._thrustdn = std::max(std::min(0.0, 0.07421 * att_rate_ctrl._thrustd), -1.0);
     att_rate_ctrl._omegad = att_rate_ctrl.compute_rates_setpoint(att_rate_ctrl._q, att_rate_ctrl._qd, att_rate_ctrl._Katt);
 
-    // Set impossible setpoint for testing (not used at this point to stop)
+    // Set impossible setpoint for testing (to avoid set_setpoint() from incrementing current_setpoint_step)
     Eigen::Vector3d pos_sp(0.f, 0.f, 0.f);
     test_gen.step_pos_setpoint(pos_sp);
 
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - roll_step_start_time).count() >= 5) {
+    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - sin_step_start_time).count() >= 10) {
         current_setpoint_step++;
 
         // Allow updates again

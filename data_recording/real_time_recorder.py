@@ -183,31 +183,43 @@ class local_position_plotter(Node):
             valid_mask = (actual_times >= sp_times[0]) & (actual_times <= sp_times[-1])
             valid_actual_times = actual_times[valid_mask]
             
-            # Roll
-            aligned_sp_roll = np.interp(valid_actual_times, sp_times, np.array(self.roll_sp_data))
-            roll_error = np.array(self.roll_data)[valid_mask] - aligned_sp_roll
-            rms_roll = np.sqrt(np.mean(np.square(roll_error)))
-            rms_text_roll = f"RMS Error: {rms_roll:.3f}°"
+            # Ensure we have enough points to actually calculate an integral
+            if len(valid_actual_times) > 1:
+                # Calculate total duration T
+                T = valid_actual_times[-1] - valid_actual_times[0]
+                
+                # Roll
+                aligned_sp_roll = np.interp(valid_actual_times, sp_times, np.array(self.roll_sp_data))
+                roll_error = np.array(self.roll_data)[valid_mask] - aligned_sp_roll
+                roll_integral = np.trapz(np.square(roll_error), x=valid_actual_times)
+                rms_roll = np.sqrt(roll_integral / T)
+                rms_text_roll = f"RMS Error: {rms_roll:.3f}°"
 
-            # Pitch
-            aligned_sp_pitch = np.interp(valid_actual_times, sp_times, np.array(self.pitch_sp_data))
-            pitch_error = np.array(self.pitch_data)[valid_mask] - aligned_sp_pitch
-            rms_pitch = np.sqrt(np.mean(np.square(pitch_error)))
-            rms_text_pitch = f"RMS Error: {rms_pitch:.3f}°"
+                # Pitch
+                aligned_sp_pitch = np.interp(valid_actual_times, sp_times, np.array(self.pitch_sp_data))
+                pitch_error = np.array(self.pitch_data)[valid_mask] - aligned_sp_pitch
+                pitch_integral = np.trapz(np.square(pitch_error), x=valid_actual_times)
+                rms_pitch = np.sqrt(pitch_integral / T)
+                rms_text_pitch = f"RMS Error: {rms_pitch:.3f}°"
 
-            # Yaw
-            aligned_sp_yaw = np.interp(valid_actual_times, sp_times, np.array(self.yaw_sp_data))
-            # Basic subtraction (assumes tests stay away from the -180/180 wrap-around boundary)
-            yaw_error = np.array(self.yaw_data)[valid_mask] - aligned_sp_yaw 
-            rms_yaw = np.sqrt(np.mean(np.square(yaw_error)))
-            rms_text_yaw = f"RMS Error: {rms_yaw:.3f}°"
+                # Yaw
+                aligned_sp_yaw = np.interp(valid_actual_times, sp_times, np.array(self.yaw_sp_data))
+                yaw_error = np.array(self.yaw_data)[valid_mask] - aligned_sp_yaw 
+                yaw_integral = np.trapz(np.square(yaw_error), x=valid_actual_times)
+                rms_yaw = np.sqrt(yaw_integral / T)
+                rms_text_yaw = f"RMS Error: {rms_yaw:.3f}°"
+            else:
+                print("WARNING: Not enough valid data points to integrate! Skipping RMS.")
+                rms_text_roll = "RMS Error: N/A"
+                rms_text_pitch = "RMS Error: N/A"
+                rms_text_yaw = "RMS Error: N/A"
         else:
             print("WARNING: No attitude setpoints received! Skipping RMS calculation.")
             rms_text_roll = "RMS Error: N/A"
             rms_text_pitch = "RMS Error: N/A"
             rms_text_yaw = "RMS Error: N/A"
 
-        # --- ATTITUDE GRAPH ---
+        # --- ATTITUDE GRAPH (FULL DATA) ---
         fig2, (ax4, ax5, ax6) = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
         fig2.suptitle('UAV Attitude vs. Time', fontsize=16)
 
@@ -244,6 +256,44 @@ class local_position_plotter(Node):
 
         fig2.tight_layout()
         fig2.savefig("data_recording/tmp/previous_run_attitude.png")
+
+        # --- CROPPED ATTITUDE GRAPH (SETPOINT REGION ONLY) ---
+        if has_setpoints:
+            fig3, (ax7, ax8, ax9) = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+            fig3.suptitle('UAV Attitude vs. Time (Test Region Only)', fontsize=16)
+
+            cropped_times = np.array(self.attitude_times)[valid_mask]
+
+            # Plot Roll
+            ax7.plot(self.attitude_sp_times, self.roll_sp_data, 'r--', linewidth=2, label='Setpoint')
+            ax7.plot(cropped_times, np.array(self.roll_data)[valid_mask], 'r-', linewidth=2, label='Actual')
+            ax7.set_ylabel('Roll (deg)')
+            ax7.legend(loc="upper right")
+            ax7.grid(True)
+            ax7.text(0.02, 0.85, rms_text_roll, transform=ax7.transAxes, fontsize=11,
+                     bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
+
+            # Plot Pitch
+            ax8.plot(self.attitude_sp_times, self.pitch_sp_data, 'g--', linewidth=2, label='Setpoint')
+            ax8.plot(cropped_times, np.array(self.pitch_data)[valid_mask], 'g-', linewidth=2, label='Actual')
+            ax8.set_ylabel('Pitch (deg)')
+            ax8.legend(loc="upper right")
+            ax8.grid(True)
+            ax8.text(0.02, 0.85, rms_text_pitch, transform=ax8.transAxes, fontsize=11,
+                     bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
+
+            # Plot Yaw
+            ax9.plot(self.attitude_sp_times, self.yaw_sp_data, 'b--', linewidth=2, label='Setpoint')
+            ax9.plot(cropped_times, np.array(self.yaw_data)[valid_mask], 'b-', linewidth=2, label='Actual')
+            ax9.set_ylabel('Yaw (deg)')
+            ax9.set_xlabel('Time (seconds)')
+            ax9.legend(loc="upper right")
+            ax9.grid(True)
+            ax9.text(0.02, 0.85, rms_text_yaw, transform=ax9.transAxes, fontsize=11,
+                     bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
+
+            fig3.tight_layout()
+            fig3.savefig("data_recording/tmp/previous_run_attitude_cropped.png")
 
         plt.show()
 

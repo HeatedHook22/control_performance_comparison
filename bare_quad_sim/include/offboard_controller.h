@@ -70,11 +70,9 @@ class OffboardControl : public rclcpp::Node {
     const double degrees_sp = 40.0;
     const float radians_sp = static_cast<float>(degrees_sp * M_PI / 180.0);
 
-    // Attitude Test Helpers
-    void attitude_step_roll_test();
-
-    // Body Rate Test Helpers
-    void body_rate_step_roll_test();
+    // Test Helpers
+    void step_rpy_test();
+    void sinusoid_rpy_test();
 
     // Physical Parameters
     Eigen::Vector3d _g;

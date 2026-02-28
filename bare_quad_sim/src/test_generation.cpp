@@ -20,6 +20,17 @@ bool test_generation::is_at_setpoint() {
 
 void test_generation::step_pos_setpoint(const Eigen::Vector3d &pos_sp) { pos_vel_acc_ctrl._pd = pos_sp; }
 
-void test_generation::step_roll_setpoint(const Eigen::Vector3d &roll_sp) { att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(roll_sp); }
-void test_generation::step_pitch_setpoint(const Eigen::Vector3d &pitch_sp) { att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(pitch_sp); }
-void test_generation::step_yaw_setpoint(const Eigen::Vector3d &yaw_sp) { att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(yaw_sp); }
+void test_generation::step_rpy_setpoint(const Eigen::Vector3d &euler_sp) { att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(euler_sp); }
+
+void test_generation::sinusoid_rpy_setpoint(const Eigen::Vector3d &euler_sp_amplitude, double frequency) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+    auto current_time = std::chrono::high_resolution_clock::now();
+    double time_sec = std::chrono::duration<double>(current_time - start_time).count();
+
+    Eigen::Vector3d euler_sp_sin = euler_sp_amplitude * std::sin(time_sec * frequency * 2 * M_PI);
+
+    // Add to current yaw to setpoint just to avoid commanding yaw by accident when passing in 0.f
+    euler_sp_sin(2) += pos_vel_acc_ctrl._yawd;
+
+    att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(euler_sp_sin);
+}

@@ -1,7 +1,6 @@
 #include "pos_vel_acc_control.h"
 
 /* ============================== Position / Velocity ============================== */
-
 pos_vel_acc::pos_vel_acc() {
     _pd << 0.0, 0.0, -1.0;
     _vd << 0.0, 0.0, 0.0;
