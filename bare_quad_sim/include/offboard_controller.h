@@ -65,14 +65,10 @@ class OffboardControl : public rclcpp::Node {
     test_generation test_gen{pos_vel_acc_ctrl, att_rate_ctrl};
     uint64_t current_setpoint_step = 0;
 
-    // Test Member Helpers
-    // For Constant roll
-    const double degrees_sp = 40.0;
-    const float radians_sp = static_cast<float>(degrees_sp * M_PI / 180.0);
-
     // Test Helpers
-    void step_rpy_test();
-    void sinusoid_rpy_test();
+    void step_rpy_test(const Eigen::Vector3d &euler_deg_sp, const std::chrono::high_resolution_clock::time_point &step_start_time);
+    void sinusoid_rpy_test(const Eigen::Vector3d &euler_deg_amplitude_sp, double frequency,
+                           const std::chrono::high_resolution_clock::time_point &step_start_time);
 
     // Physical Parameters
     Eigen::Vector3d _g;

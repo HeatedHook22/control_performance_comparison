@@ -71,6 +71,17 @@ Eigen::Vector3d attitude_rates::compute_rates_setpoint(Eigen::Vector4d &curr_att
     des_rate(0) = 2 * K_att(0) * std::copysign(1.0, qe(0)) * qe(1);
     des_rate(1) = 2 * K_att(1) * std::copysign(1.0, qe(0)) * qe(2);
     des_rate(2) = 2 * K_att(2) * std::copysign(1.0, qe(0)) * qe(3);
+
+    // Standard PX4 default limits: 220 deg/s for Roll/Pitch, 200 deg/s for Yaw
+    // Can be found inside QGroundControl as well
+    // Eigen::Vector3d max_rates(220, 220, 200);
+    // max_rates *= M_PI / 180.0; // Convert to rad/s
+
+    // // Saturate rates
+    // des_rate(0) = std::max(std::min(des_rate(0), max_rates(0)), -max_rates(0));
+    // des_rate(1) = std::max(std::min(des_rate(1), max_rates(1)), -max_rates(1));
+    // des_rate(2) = std::max(std::min(des_rate(2), max_rates(2)), -max_rates(2));
+
     return des_rate;
 }
 

@@ -279,19 +279,29 @@ void OffboardControl::set_setpoint() {
         test_gen.step_pos_setpoint(pos_sp);
         break;
     }
-    // case 1: {
-    //     set_offboard_control_mode(BODY_RATE);
-    //     this->sinusoid_rpy_test();
-    //     break;
-    // }
     case 1: {
-        set_offboard_control_mode(ATTITUDE);
-        this->step_rpy_test();
+        // Setup timed finish
+        static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+
+        set_offboard_control_mode(BODY_RATE);
+        Eigen::Vector3d rpy_sp(40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
+        this->step_rpy_test(rpy_sp, roll_step_start_time);
+        break;
+    }
+    case 2: {
+        // Setup timed finish
+        static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+
+        Eigen::Vector3d rpy_sp(-40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
+        this->step_rpy_test(rpy_sp, roll_step_start_time);
         break;
     }
     default: {
         // Change modes for landing (smoother for exiting test cases)
         set_offboard_control_mode(POSITION);
+
+        // Allow updates again, in case they were disabled for testing
+        bypass_update_control = false;
 
         // Land vehicle
         Eigen::Vector3d pos_sp(0.f, 0.f, -1.f);
@@ -314,20 +324,18 @@ void OffboardControl::set_setpoint() {
     }
 }
 
-void OffboardControl::step_rpy_test() {
-    // Setup timed finish
-    static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+void OffboardControl::step_rpy_test(const Eigen::Vector3d &euler_deg_sp, const std::chrono::high_resolution_clock::time_point &step_start_time) {
+    const auto radians_sp = euler_deg_sp * M_PI / 180.0;
 
     static bool compensation_set = false;
     if (!compensation_set) {
-        const double cos_tilt = std::cos(radians_sp);
+        const double cos_tilt = std::cos(radians_sp(0));                    // Roll should match pitch angle for compensation
         const auto locked_test_thrust = att_rate_ctrl._thrustdn / cos_tilt; // Compensate for loss of vertical thrust due to tilt, leave constant
         att_rate_ctrl._thrustdn = std::max(locked_test_thrust, -1.0);
         compensation_set = true;
     }
 
-    Eigen::Vector3d euler_sp(radians_sp, 0.f, M_PI_2);
-    test_gen.step_rpy_setpoint(euler_sp);
+    test_gen.step_rpy_setpoint(radians_sp);
 
     // Calculate required body rates from the attitude error, only affects body_rate control mode
     att_rate_ctrl._omegad = att_rate_ctrl.compute_rates_setpoint(att_rate_ctrl._q, att_rate_ctrl._qd, att_rate_ctrl._Katt);
@@ -336,22 +344,18 @@ void OffboardControl::step_rpy_test() {
     Eigen::Vector3d pos_sp(0.f, 0.f, 0.f);
     test_gen.step_pos_setpoint(pos_sp);
 
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - roll_step_start_time).count() >= 5) {
+    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 5) {
         current_setpoint_step++;
-
-        // Allow updates again
-        bypass_update_control = false;
     }
 
     bypass_update_control = true; // Disable control updates to hold attitude setpoint
 }
 
-void OffboardControl::sinusoid_rpy_test() {
-    // Setup timed finish
-    static auto sin_step_start_time = std::chrono::high_resolution_clock::now();
+void OffboardControl::sinusoid_rpy_test(const Eigen::Vector3d &euler_deg_amplitude_sp, double frequency,
+                                        const std::chrono::high_resolution_clock::time_point &step_start_time) {
+    const auto radians_sp_amplitude = euler_deg_amplitude_sp * M_PI / 180.0;
 
-    Eigen::Vector3d euler_sp_amplitude(radians_sp, 0.f, 0.f);
-    test_gen.sinusoid_rpy_setpoint(euler_sp_amplitude, 0.25);
+    test_gen.sinusoid_rpy_setpoint(radians_sp_amplitude, frequency);
 
     double qx = att_rate_ctrl._q.x();
     double qy = att_rate_ctrl._q.y();
@@ -368,11 +372,8 @@ void OffboardControl::sinusoid_rpy_test() {
     Eigen::Vector3d pos_sp(0.f, 0.f, 0.f);
     test_gen.step_pos_setpoint(pos_sp);
 
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - sin_step_start_time).count() >= 10) {
+    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 10) {
         current_setpoint_step++;
-
-        // Allow updates again
-        bypass_update_control = false;
     }
 
     bypass_update_control = true; // Disable control updates to hold attitude setpoint
