@@ -48,7 +48,7 @@ using namespace px4_msgs::msg;
 int main(int argc, char *argv[]) {
     // MUST BE RUN FROM WITHIN PARENT DIRECTORY
     std::cout << "Starting recording script..." << std::endl;
-    std::system("python3 data_recording/real_time_recorder.py &");
+    std::system("python3 data_recording/real_time_recorder.py > data_recording/tmp/previous_plotter_log.txt 2>&1 &");
     std::this_thread::sleep_for(2000ms);
 
     std::cout << "Starting offboard control node..." << std::endl;
@@ -115,13 +115,10 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
             pos_vel_acc_ctrl.publish_velocity_setpoint(timestamp);
         else if (_enable_acceleration_cmd)
             pos_vel_acc_ctrl.publish_acceleration_setpoint(timestamp);
-        else if (_enable_attitude_cmd)
+        else if (_enable_attitude_cmd || _enable_rate_cmd) {
+            // We publish both for the sake of data recording, but only one will be listened to at a time by the vehicle
             att_rate_ctrl.publish_attitude_setpoint(timestamp);
-        else if (_enable_rate_cmd) {
             att_rate_ctrl.publish_rates_setpoint(timestamp);
-
-            // We publish this for the python script, but it doesn't affect the control for body rate, since attitude should be FALSE
-            att_rate_ctrl.publish_attitude_setpoint(timestamp);
         }
 
         // Stop the counter
@@ -283,7 +280,7 @@ void OffboardControl::set_setpoint() {
         // Setup timed finish
         static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
 
-        set_offboard_control_mode(ATTITUDE);
+        set_offboard_control_mode(BODY_RATE);
         Eigen::Vector3d rpy_sp(40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
         this->step_rpy_test(rpy_sp, roll_step_start_time);
         break;
