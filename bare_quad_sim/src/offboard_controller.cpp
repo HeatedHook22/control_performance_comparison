@@ -283,19 +283,19 @@ void OffboardControl::set_setpoint() {
         // Setup timed finish
         static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
 
-        set_offboard_control_mode(BODY_RATE);
+        set_offboard_control_mode(ATTITUDE);
         Eigen::Vector3d rpy_sp(40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
         this->step_rpy_test(rpy_sp, roll_step_start_time);
         break;
     }
-    case 2: {
-        // Setup timed finish
-        static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+    // case 2: {
+    //     // Setup timed finish
+    //     static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
 
-        Eigen::Vector3d rpy_sp(-40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
-        this->step_rpy_test(rpy_sp, roll_step_start_time);
-        break;
-    }
+    //     Eigen::Vector3d rpy_sp(-40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
+    //     this->step_rpy_test(rpy_sp, roll_step_start_time);
+    //     break;
+    // }
     default: {
         // Change modes for landing (smoother for exiting test cases)
         set_offboard_control_mode(POSITION);
