@@ -2,4 +2,4 @@ build/
 install/
 log/
 .vscode/
-bare_quad_sim/data_recording/tmp/
+data_recording/tmp/
