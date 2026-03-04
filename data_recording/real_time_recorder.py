@@ -13,12 +13,19 @@ import time
 import math
 import numpy as np
 
-class local_position_plotter(Node):
+class data_recorder(Node):
     def __init__(self):
         super().__init__('local_position_plotter')
         
         # Subscribe using the Sensor Data QoS profile (Best Effort)
         self.local_pos_subscription = self.create_subscription(
+            VehicleLocalPosition,
+            '/fmu/out/vehicle_local_position_v1',
+            self.position_callback,
+            qos_profile_sensor_data
+        )
+
+        self.local_pos_sp_subscription = self.create_subscription(
             VehicleLocalPosition,
             '/fmu/out/vehicle_local_position_v1',
             self.position_callback,
@@ -68,6 +75,11 @@ class local_position_plotter(Node):
         self.x_data = []
         self.y_data = []
         self.z_data = []
+
+        self.position_sp_times = []
+        self.x_sp_data = []
+        self.y_sp_data = []
+        self.z_sp_data = []
 
         self.attitude_times = []
         self.roll_data = []
@@ -311,20 +323,33 @@ class local_position_plotter(Node):
                 file_prefix="rates"
             )
 
+        # 3. Generate Local Position Graphs
+        if self.position_times:
+            self.generate_metric_graphs(
+                metric_name="Local Position",
+                actual_times=self.position_times,
+                actual_data=(self.x_data, self.y_data, self.z_data),
+                sp_times=self.position_setpoint,
+                sp_data=(self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
+                ylabels=('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'),
+                rms_unit="°/s",
+                file_prefix="rates"
+            )
+
         # plt.show()
 
 def main(args=None):
     rclpy.init(args=args)
-    plotter_node = local_position_plotter()
+    data_recorder_node = data_recorder()
 
     try:
-        rclpy.spin(plotter_node)
+        rclpy.spin(data_recorder_node)
     except (KeyboardInterrupt, ExternalShutdownException):
         print('\nRecording stopped by user.')
     finally:
         # Generate graphs before destroying the ROS context to avoid logger crashes
-        plotter_node.generate_graphs()
-        plotter_node.destroy_node()
+        data_recorder_node.generate_graphs()
+        data_recorder_node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 
