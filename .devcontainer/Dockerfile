@@ -7,6 +7,11 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
+# Create a dedicated user to stop root from hijacking files
+RUN apt-get update && apt-get install -y sudo \
+    && useradd -m -s /bin/bash -G sudo -u 1000 developer \
+    && echo "developer ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
 # ================================
 # 1. Basic tools, Git LFS, & ROS 2 Repo setup
 # ================================
@@ -75,8 +80,8 @@ RUN pip3 install --force-reinstall "numpy<2"
 # Setup rosdep
 RUN rosdep init || true && rosdep update
 
-# Auto-source ROS 2 
-RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+# Auto-source ROS 2 for ALL users so our 'developer' user gets it
+RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
 # ================================
 # 6. Build PX4 ROS 2 Messages (Underlay Workspace)
@@ -87,7 +92,16 @@ RUN git clone https://github.com/PX4/px4_msgs.git \
 
 WORKDIR /opt/px4_ros_ws
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build"
-RUN echo "source /opt/px4_ros_ws/install/setup.bash" >> ~/.bashrc
+RUN echo "source /opt/px4_ros_ws/install/setup.bash" >> /etc/bash.bashrc
+
+# Hand ownership of the PX4 and ROS workspaces to the user
+RUN chown -R developer:developer /opt/PX4-Autopilot /opt/px4_ros_ws /opt/Micro-XRCE-DDS-Agent
+
+# Automatically source the local VS Code workspace IF it has been built
+RUN echo 'if [ -f install/local_setup.bash ]; then source install/local_setup.bash; fi' >> /home/developer/.bashrc
+
+# Force all future raw Docker connections to default to this user
+USER developer
 
 # Ensure the terminal starts in the mounted Codespace directory
 WORKDIR /workspaces

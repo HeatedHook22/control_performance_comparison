@@ -7,6 +7,8 @@
         "--privileged",
         "--network=host"
     ],
+    "remoteUser": "developer",
+    "updateRemoteUserUID": true,
     "postCreateCommand": "git config --global --add safe.directory '*' && echo 'Environment ready. Source ROS with: source /opt/ros/humble/setup.bash'",
     "customizations": {
         "vscode": {
@@ -14,7 +16,10 @@
                 "Ranch-Hand-Robotics.rde-ros-2",
                 "Ranch-Hand-Robotics.rde-urdf",
                 "ms-python.python",
-                "ms-vscode.cpptools"
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "twxs.cmake"
             ]
         }
     }
