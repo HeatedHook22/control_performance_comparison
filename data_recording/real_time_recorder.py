@@ -6,7 +6,8 @@ from px4_msgs.msg import VehicleStatus
 from px4_msgs.msg import VehicleAttitude
 from px4_msgs.msg import VehicleAttitudeSetpoint 
 from px4_msgs.msg import VehicleRatesSetpoint 
-from px4_msgs.msg import VehicleOdometry # <-- SWAPPED IMPORT
+from px4_msgs.msg import VehicleOdometry
+from px4_msgs.msg import TrajectorySetpoint
 from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
@@ -26,15 +27,15 @@ class data_recorder(Node):
         )
 
         self.local_pos_sp_subscription = self.create_subscription(
-            VehicleLocalPosition,
-            '/fmu/out/vehicle_local_position_v1',
-            self.position_callback,
+            TrajectorySetpoint,
+            '/fmu/in/trajectory_setpoint',
+            self.position_setpoint_callback,
             qos_profile_sensor_data
         )
 
         self.offboard_mode_subscription = self.create_subscription(
             VehicleStatus,
-            '/fmu/out/vehicle_status_v1',
+            '/fmu/out/vehicle_status_v2',
             self.status_callback,
             qos_profile_sensor_data
         )
@@ -115,6 +116,17 @@ class data_recorder(Node):
         self.x_data.append(msg.x)
         self.y_data.append(msg.y)
         self.z_data.append(msg.z)
+
+    def position_setpoint_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+
+        current_time = time.time() - self.start_time
+        
+        self.position_sp_times.append(current_time)
+        self.x_sp_data.append(msg.position[0])
+        self.y_sp_data.append(msg.position[1])
+        self.z_sp_data.append(msg.position[2])
 
     def attitude_callback(self, msg):
         if self.start_time is None:
@@ -329,11 +341,11 @@ class data_recorder(Node):
                 metric_name="Local Position",
                 actual_times=self.position_times,
                 actual_data=(self.x_data, self.y_data, self.z_data),
-                sp_times=self.position_setpoint,
-                sp_data=(self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
-                ylabels=('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'),
-                rms_unit="°/s",
-                file_prefix="rates"
+                sp_times=self.position_sp_times,
+                sp_data=(self.x_sp_data, self.y_sp_data, self.z_sp_data),
+                ylabels=('x (m)', 'y (m)', 'z (m)'),
+                rms_unit="m",
+                file_prefix="position"
             )
 
         # plt.show()
