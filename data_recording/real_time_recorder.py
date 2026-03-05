@@ -304,41 +304,59 @@ class data_recorder(Node):
                 
         return None, None
 
-    def create_plot(self, title, actual_times, actual_data, sp_times, sp_data, rms_texts, ylabels, filename, rms_start_times=None):
+    def create_plot(self, title, plot_runs, ylabels, filename):
         fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
         fig.suptitle(title, fontsize=16)
 
-        colors = ['r', 'g', 'b']
-
         for i, ax in enumerate(axes):
-            if sp_times is not None and len(sp_times) > 0 and sp_data is not None:
-                ax.plot(sp_times, sp_data[i], f'{colors[i]}--', linewidth=2, label='Setpoint')
-            ax.plot(actual_times, actual_data[i], f'{colors[i]}-', linewidth=2, label='Actual')
+            rms_box_texts = []
             
-            if rms_start_times is not None and rms_start_times[i] is not None:
-                ax.axvline(x=rms_start_times[i], color='black', linestyle=':', alpha=0.7, label='RMS Start')
+            for run in plot_runs:
+                a_t = run.get('actual_times', [])
+                if len(a_t) == 0:
+                    continue
+                    
+                a_d = run['actual_data'][i]
+                sp_t = run.get('sp_times', [])
+                sp_d = run.get('sp_data', [])
+                
+                c = run.get('color', ['r', 'g', 'b'][i])
+                prefix = run.get('label_prefix', '')
+                
+                sp_label = f'{prefix} Setpoint'.strip()
+                act_label = f'{prefix} Actual'.strip()
+                rms_label = f'{prefix} RMS Start'.strip()
+
+                if sp_t is not None and len(sp_t) > 0 and sp_d is not None:
+                    ax.plot(sp_t, sp_d[i], color=c, linestyle='--', linewidth=1.5, alpha=0.7, label=sp_label)
+                
+                ax.plot(a_t, a_d, color=c, linestyle='-', linewidth=2, label=act_label)
+                
+                rms_starts = run.get('rms_start_times')
+                if rms_starts is not None and rms_starts[i] is not None:
+                    line_color = 'black' if not prefix else c
+                    ax.axvline(x=rms_starts[i], color=line_color, linestyle=':', alpha=0.7, label=rms_label)
+                
+                rms_texts = run.get('rms_texts')
+                if rms_texts is not None:
+                    rms_box_texts.append(f"{prefix + ' ' if prefix else ''}{rms_texts[i]}")
             
             ax.set_ylabel(ylabels[i])
             
-            # Deduplicate the legend so 'RMS Start' doesn't show up 100 times
-            handles, labels = ax.get_legend_handles_labels()
-            by_label = dict(zip(labels, handles))
-            
-            # Place legend outside the axes on the right
-            ax.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1.02, 1))
-            
+            handles, labels_lgd = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels_lgd, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1.02, 1), 
+                      fontsize=8 if len(plot_runs) > 1 else 10)
             ax.grid(True)
             
-            # Place text box outside the axes below the legend
-            ax.text(1.02, 0.05, rms_texts[i], transform=ax.transAxes, fontsize=11,
-                    verticalalignment='bottom',
-                    bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
+            if rms_box_texts:
+                ax.text(1.02, 0.05, "\n".join(rms_box_texts), transform=ax.transAxes, fontsize=10,
+                        verticalalignment='bottom', bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
 
         axes[-1].set_xlabel('Time (seconds)')
-
-        # Restrict standard plots to the left 82% of the image, reserving the rest for external boxes
         fig.tight_layout(rect=[0, 0, 0.82, 1])
-        fig.savefig(filename)
+        # INCREASED DPI TO 300 FOR HIGH QUALITY
+        fig.savefig(filename, dpi=300)
 
     def generate_metric_graphs(self, metric_name, actual_times, actual_data, sp_times, sp_data, ylabels, rms_unit, file_prefix, global_start, global_end):
         if not actual_times:
@@ -366,16 +384,20 @@ class data_recorder(Node):
         else:
             print(f"WARNING: No {metric_name} setpoints received! Skipping RMS calculation.")
 
+        run_full = {
+            'actual_times': actual_times,
+            'actual_data': actual_data,
+            'sp_times': sp_times if has_setpoints else None,
+            'sp_data': sp_data if has_setpoints else None,
+            'rms_texts': rms_texts,
+            'rms_start_times': rms_start_times
+        }
+
         self.create_plot(
             title=f'UAV {metric_name} vs. Time',
-            actual_times=actual_times,
-            actual_data=actual_data,
-            sp_times=sp_times if has_setpoints else None,
-            sp_data=sp_data if has_setpoints else None,
-            rms_texts=rms_texts,
+            plot_runs=[run_full],
             ylabels=ylabels,
-            filename=f"data_recording/tmp/previous_run_{file_prefix}.png",
-            rms_start_times=rms_start_times
+            filename=f"data_recording/tmp/previous_run_{file_prefix}.png"
         )
 
         if has_setpoints and global_start is not None and global_end is not None:
@@ -399,19 +421,22 @@ class data_recorder(Node):
                 np.array(sp_data[2])[sp_global_mask]
             )
             
-            # Shift the vertical line timestamps so they align on the cropped graph
             cropped_rms_starts = [t - global_start if t is not None else None for t in rms_start_times]
             
+            run_cropped = {
+                'actual_times': cropped_times,
+                'actual_data': cropped_data,
+                'sp_times': cropped_sp_times,
+                'sp_data': cropped_sp_data,
+                'rms_texts': rms_texts,
+                'rms_start_times': cropped_rms_starts
+            }
+
             self.create_plot(
                 title=f'UAV {metric_name} vs. Time (Test Region Only)',
-                actual_times=cropped_times,
-                actual_data=cropped_data,
-                sp_times=cropped_sp_times,
-                sp_data=cropped_sp_data,
-                rms_texts=rms_texts,
+                plot_runs=[run_cropped],
                 ylabels=ylabels,
-                filename=f"data_recording/tmp/previous_run_{file_prefix}_cropped.png",
-                rms_start_times=cropped_rms_starts
+                filename=f"data_recording/tmp/previous_run_{file_prefix}_cropped.png"
             )
 
     def export_test_region_to_csv(self, global_start, global_end, filename):
@@ -486,68 +511,51 @@ class data_recorder(Node):
         att_data = load_csv(att_file)
         br_data = load_csv(br_file)
         
+        def extract_run(data_dict, prefix, labels, rms_unit, color, label_prefix):
+            t = data_dict.get(f'{prefix}_Time', np.array([]))
+            if len(t) == 0:
+                return None
+            d = [data_dict.get(f'{prefix}_{l}', np.array([])) for l in labels]
+            spt = data_dict.get(f'{prefix}_SP_Time', np.array([]))
+            spd = [data_dict.get(f'{prefix}_SP_{l}', np.array([])) for l in labels]
+            
+            rms_texts = ["N/A", "N/A", "N/A"]
+            rms_starts = [None, None, None]
+            if len(spt) > 0:
+                for i in range(3):
+                    rms, ss_time = self.calculate_rms(t, d[i], spt, spd[i], 0, None)
+                    if rms is not None:
+                        rms_texts[i] = f"RMS Error: {rms:.3f}{rms_unit}"
+                        rms_starts[i] = ss_time
+            
+            return {
+                'actual_times': t,
+                'actual_data': d,
+                'sp_times': spt,
+                'sp_data': spd,
+                'color': color,
+                'label_prefix': label_prefix,
+                'rms_texts': rms_texts,
+                'rms_start_times': rms_starts
+            }
+
         def plot_comp(metric, prefix, labels, ylabels, rms_unit):
             if f'{prefix}_Time' not in att_data and f'{prefix}_Time' not in br_data:
                 return
-                
-            fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
-            fig.suptitle(f'UAV {metric} vs. Time (Attitude vs Body Rate Mode)', fontsize=16)
             
-            att_rms_texts = ["N/A", "N/A", "N/A"]
-            br_rms_texts = ["N/A", "N/A", "N/A"]
+            runs = []
+            att_run = extract_run(att_data, prefix, labels, rms_unit, 'blue', 'Att Mode')
+            if att_run: runs.append(att_run)
             
-            for i, ax in enumerate(axes):
-                label = labels[i]
-                
-                # --- ATTITUDE MODE DATA ---
-                a_t = att_data.get(f'{prefix}_Time', np.array([]))
-                a_d = att_data.get(f'{prefix}_{label}', np.array([]))
-                a_spt = att_data.get(f'{prefix}_SP_Time', np.array([]))
-                a_spd = att_data.get(f'{prefix}_SP_{label}', np.array([]))
-                
-                if len(a_t) > 0 and len(a_spt) > 0:
-                    rms, ss_time = self.calculate_rms(a_t, a_d, a_spt, a_spd, 0, None)
-                    if rms is not None:
-                        att_rms_texts[i] = f"{rms:.3f}{rms_unit}"
-                        ax.axvline(x=ss_time, color='blue', linestyle=':', alpha=0.5, label='Att Mode RMS Start')
-                    ax.plot(a_spt, a_spd, color='blue', linestyle='--', linewidth=1.5, alpha=0.5, label='Att Mode SP')
-                    ax.plot(a_t, a_d, color='blue', linestyle='-', linewidth=2, label='Att Mode Actual')
-                
-                # --- BODY RATE MODE DATA ---
-                b_t = br_data.get(f'{prefix}_Time', np.array([]))
-                b_d = br_data.get(f'{prefix}_{label}', np.array([]))
-                b_spt = br_data.get(f'{prefix}_SP_Time', np.array([]))
-                b_spd = br_data.get(f'{prefix}_SP_{label}', np.array([]))
-                
-                if len(b_t) > 0 and len(b_spt) > 0:
-                    rms, ss_time = self.calculate_rms(b_t, b_d, b_spt, b_spd, 0, None)
-                    if rms is not None:
-                        br_rms_texts[i] = f"{rms:.3f}{rms_unit}"
-                        ax.axvline(x=ss_time, color='orange', linestyle=':', alpha=0.5, label='BR Mode RMS Start')
-                    ax.plot(b_spt, b_spd, color='orange', linestyle='--', linewidth=1.5, alpha=0.5, label='BR Mode SP')
-                    ax.plot(b_t, b_d, color='orange', linestyle='-', linewidth=2, label='BR Mode Actual')
-                
-                ax.set_ylabel(ylabels[i])
-                
-                rms_box_text = f"Att Mode RMS: {att_rms_texts[i]}\nBR Mode RMS: {br_rms_texts[i]}"
-                
-                # Place comparison text box outside the axes
-                ax.text(1.02, 0.05, rms_box_text, transform=ax.transAxes, fontsize=10,
-                        verticalalignment='bottom',
-                        bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
-                
-                handles, l = ax.get_legend_handles_labels()
-                by_label = dict(zip(l, handles))
-                
-                # Place comparison legend outside the axes
-                ax.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=8)
-                ax.grid(True)
-                
-            axes[-1].set_xlabel('Time (seconds)')
+            br_run = extract_run(br_data, prefix, labels, rms_unit, 'orange', 'BR Mode')
+            if br_run: runs.append(br_run)
             
-            # Restrict plots to the left 82%
-            fig.tight_layout(rect=[0, 0, 0.82, 1])
-            fig.savefig(f"data_recording/tmp/comparison_{prefix.lower()}.png")
+            self.create_plot(
+                title=f'UAV {metric} vs. Time (Attitude vs Body Rate Mode)',
+                plot_runs=runs,
+                ylabels=ylabels,
+                filename=f"data_recording/tmp/comparison_{prefix.lower()}.png"
+            )
             
         plot_comp("Attitude", "Attitude", ["Roll", "Pitch", "Yaw"], ['Roll (°)', 'Pitch (°)', 'Yaw (°)'], "°")
         plot_comp("Body Rates", "Rates", ["RollRate", "PitchRate", "YawRate"], ['Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'], "°/s")
