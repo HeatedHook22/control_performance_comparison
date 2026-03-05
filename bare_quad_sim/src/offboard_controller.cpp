@@ -46,9 +46,11 @@ using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
 
 int main(int argc, char *argv[]) {
-    // MUST BE RUN FROM WITHIN PARENT DIRECTORY
     std::cout << "Starting recording script..." << std::endl;
-    std::system("python3 data_recording/real_time_recorder.py > data_recording/tmp/previous_plotter_log.txt 2>&1 &");
+    // Dynamically find the workspace source, create the tmp directory, and launch the python script safely
+    std::system("export REC_DIR=$(ros2 pkg prefix bare_quad_sim)/../../data_recording && "
+                "mkdir -p $REC_DIR/tmp && "
+                "python3 $REC_DIR/real_time_recorder.py > $REC_DIR/tmp/previous_plotter_log.txt 2>&1 &");
     std::this_thread::sleep_for(2000ms);
 
     std::cout << "Starting offboard control node..." << std::endl;
@@ -205,7 +207,7 @@ void OffboardControl::publish_vehicle_command(uint16_t command, float param1, fl
 }
 
 void OffboardControl::update_control() {
-    // p, v,  and errors
+    // p, v, and errors
     auto &_p = pos_vel_acc_ctrl._p;
     auto &_v = pos_vel_acc_ctrl._v;
 
