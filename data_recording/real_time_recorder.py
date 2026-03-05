@@ -214,23 +214,63 @@ class data_recorder(Node):
             raise KeyboardInterrupt
         self.previous_arming_state = msg.arming_state
 
-    def calculate_rms(self, actual_times, actual_data, sp_times, sp_data):
+    def get_test_window(self):
+        if self.rates_sp_times:
+            self.get_logger().info("Test region anchored to Body Rates setpoints.")
+            return self.rates_sp_times[0], self.rates_sp_times[-1]
+        elif self.attitude_sp_times:
+            self.get_logger().info("Test region anchored to Attitude setpoints.")
+            return self.attitude_sp_times[0], self.attitude_sp_times[-1]
+        elif self.position_sp_times:
+            self.get_logger().info("Test region anchored to Position setpoints.")
+            return self.position_sp_times[0], self.position_sp_times[-1]
+        return None, None
+
+    def calculate_rms(self, actual_times, actual_data, sp_times, sp_data, test_start, test_end, fraction_of_rise_time = 0.95):
         actual_times = np.array(actual_times)
         actual_data = np.array(actual_data)
         sp_times = np.array(sp_times)
         sp_data = np.array(sp_data)
-        valid_mask = (actual_times >= sp_times[0]) & (actual_times <= sp_times[-1])
+        
+        # Restrict analysis strictly to the global test window
+        start_bound = max(sp_times[0], test_start) if test_start is not None else sp_times[0]
+        end_bound = min(sp_times[-1], test_end) if test_end is not None else sp_times[-1]
+        
+        valid_mask = (actual_times >= start_bound) & (actual_times <= end_bound)
         valid_actual_times = actual_times[valid_mask]
+        
         if len(valid_actual_times) > 1:
-            T = valid_actual_times[-1] - valid_actual_times[0]
-            if T > 0:
-                aligned_sp = np.interp(valid_actual_times, sp_times, sp_data)
-                error = actual_data[valid_mask] - aligned_sp
-                integral = np.trapz(np.square(error), x=valid_actual_times)
-                return np.sqrt(integral / T)
-        return None
+            aligned_sp = np.interp(valid_actual_times, sp_times, sp_data)
+            error = actual_data[valid_mask] - aligned_sp
+            
+            # Find the 95% steady-state starting point WITHIN the test window
+            final_sp = aligned_sp[-1]
+            initial_actual = actual_data[valid_mask][0]
+            step_range = final_sp - initial_actual
+            
+            steady_idx = 0
+            if abs(step_range) > 1e-3: # Ignore if it wasn't a real step command
+                threshold = initial_actual + fraction_of_rise_time * step_range
+                if step_range > 0:
+                    crossings = np.where(actual_data[valid_mask] >= threshold)[0]
+                else:
+                    crossings = np.where(actual_data[valid_mask] <= threshold)[0]
+                
+                if len(crossings) > 0:
+                    steady_idx = crossings[0]
+            
+            ss_times = valid_actual_times[steady_idx:]
+            ss_error = error[steady_idx:]
+            
+            T = ss_times[-1] - ss_times[0]
+            if T > 0 and len(ss_times) > 1:
+                integral = np.trapz(np.square(ss_error), x=ss_times)
+                rms = np.sqrt(integral / T)
+                return rms, valid_actual_times[steady_idx]
+                
+        return None, None
 
-    def create_plot(self, title, actual_times, actual_data, sp_times, sp_data, rms_texts, ylabels, filename):
+    def create_plot(self, title, actual_times, actual_data, sp_times, sp_data, rms_texts, ylabels, filename, rms_start_times=None):
         fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
         fig.suptitle(title, fontsize=16)
 
@@ -240,8 +280,17 @@ class data_recorder(Node):
             if sp_times is not None and len(sp_times) > 0 and sp_data is not None:
                 ax.plot(sp_times, sp_data[i], f'{colors[i]}--', linewidth=2, label='Setpoint')
             ax.plot(actual_times, actual_data[i], f'{colors[i]}-', linewidth=2, label='Actual')
+            
+            if rms_start_times is not None and rms_start_times[i] is not None:
+                ax.axvline(x=rms_start_times[i], color='black', linestyle=':', alpha=0.7, label='RMS Start')
+            
             ax.set_ylabel(ylabels[i])
-            ax.legend(loc="upper right")
+            
+            # Deduplicate the legend so 'RMS Start' doesn't show up 100 times
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="upper right")
+            
             ax.grid(True)
             ax.text(0.02, 0.85, rms_texts[i], transform=ax.transAxes, fontsize=11,
                     bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
@@ -251,7 +300,7 @@ class data_recorder(Node):
         fig.tight_layout()
         fig.savefig(filename)
 
-    def generate_metric_graphs(self, metric_name, actual_times, actual_data, sp_times, sp_data, ylabels, rms_unit, file_prefix):
+    def generate_metric_graphs(self, metric_name, actual_times, actual_data, sp_times, sp_data, ylabels, rms_unit, file_prefix, global_start, global_end):
         if not actual_times:
             print(f"No actual data received for {metric_name}. Is the topic publishing?")
             return
@@ -260,6 +309,7 @@ class data_recorder(Node):
         has_setpoints = sp_times is not None and len(sp_times) > 0
         
         rms_texts = ["RMS Error: N/A", "RMS Error: N/A", "RMS Error: N/A"]
+        rms_start_times = [None, None, None]
 
         if has_setpoints:
             actual_times_arr = np.array(actual_times)
@@ -267,9 +317,10 @@ class data_recorder(Node):
             valid_mask = (actual_times_arr >= sp_times_arr[0]) & (actual_times_arr <= sp_times_arr[-1])
             
             for i in range(3):
-                rms = self.calculate_rms(actual_times, actual_data[i], sp_times, sp_data[i])
+                rms, ss_time = self.calculate_rms(actual_times, actual_data[i], sp_times, sp_data[i], global_start, global_end)
                 if rms is not None:
                     rms_texts[i] = f"RMS Error: {rms:.3f}{rms_unit}"
+                    rms_start_times[i] = ss_time
                 else:
                     print(f"WARNING: Not enough valid data points to integrate {ylabels[i]}! Skipping RMS.")
         else:
@@ -283,32 +334,52 @@ class data_recorder(Node):
             sp_data=sp_data if has_setpoints else None,
             rms_texts=rms_texts,
             ylabels=ylabels,
-            filename=f"data_recording/tmp/previous_run_{file_prefix}.png"
+            filename=f"data_recording/tmp/previous_run_{file_prefix}.png",
+            rms_start_times=rms_start_times
         )
 
-        if has_setpoints:
-            cropped_times = actual_times_arr[valid_mask]
+        if has_setpoints and global_start is not None and global_end is not None:
+            actual_times_arr = np.array(actual_times)
+            sp_times_arr = np.array(sp_times)
+            
+            global_mask = (actual_times_arr >= global_start) & (actual_times_arr <= global_end)
+            sp_global_mask = (sp_times_arr >= global_start) & (sp_times_arr <= global_end)
+            
+            cropped_times = actual_times_arr[global_mask] - global_start
             cropped_data = (
-                np.array(actual_data[0])[valid_mask],
-                np.array(actual_data[1])[valid_mask],
-                np.array(actual_data[2])[valid_mask]
+                np.array(actual_data[0])[global_mask],
+                np.array(actual_data[1])[global_mask],
+                np.array(actual_data[2])[global_mask]
             )
+            
+            cropped_sp_times = sp_times_arr[sp_global_mask] - global_start
+            cropped_sp_data = (
+                np.array(sp_data[0])[sp_global_mask],
+                np.array(sp_data[1])[sp_global_mask],
+                np.array(sp_data[2])[sp_global_mask]
+            )
+            
+            # Shift the vertical line timestamps so they align on the cropped graph
+            cropped_rms_starts = [t - global_start if t is not None else None for t in rms_start_times]
             
             self.create_plot(
                 title=f'UAV {metric_name} vs. Time (Test Region Only)',
                 actual_times=cropped_times,
                 actual_data=cropped_data,
-                sp_times=sp_times,
-                sp_data=sp_data,
+                sp_times=cropped_sp_times,
+                sp_data=cropped_sp_data,
                 rms_texts=rms_texts,
                 ylabels=ylabels,
-                filename=f"data_recording/tmp/previous_run_{file_prefix}_cropped.png"
+                filename=f"data_recording/tmp/previous_run_{file_prefix}_cropped.png",
+                rms_start_times=cropped_rms_starts
             )
 
     def generate_graphs(self):
         if not self.position_times or not self.attitude_times:
             print("No data was received. Is the topic publishing?")
             return
+
+        global_start, global_end = self.get_test_window()
 
         # 1. Generate Attitude Graphs
         self.generate_metric_graphs(
@@ -319,7 +390,9 @@ class data_recorder(Node):
             sp_data=(self.roll_sp_data, self.pitch_sp_data, self.yaw_sp_data),
             ylabels=('Roll (°)', 'Pitch (°)', 'Yaw (°)'),
             rms_unit="°",
-            file_prefix="attitude"
+            file_prefix="attitude",
+            global_start=global_start,
+            global_end=global_end
         )
 
         # 2. Generate Body Rate Graphs
@@ -332,7 +405,9 @@ class data_recorder(Node):
                 sp_data=(self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
                 ylabels=('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'),
                 rms_unit="°/s",
-                file_prefix="rates"
+                file_prefix="rates",
+                global_start=global_start,
+                global_end=global_end
             )
 
         # 3. Generate Local Position Graphs
@@ -345,7 +420,9 @@ class data_recorder(Node):
                 sp_data=(self.x_sp_data, self.y_sp_data, self.z_sp_data),
                 ylabels=('x (m)', 'y (m)', 'z (m)'),
                 rms_unit="m",
-                file_prefix="position"
+                file_prefix="position",
+                global_start=global_start,
+                global_end=global_end
             )
 
         # plt.show()

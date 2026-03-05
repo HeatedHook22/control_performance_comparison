@@ -121,6 +121,7 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
             // We publish both for the sake of data recording, but only one will be listened to at a time by the vehicle
             att_rate_ctrl.publish_attitude_setpoint(timestamp);
             att_rate_ctrl.publish_rates_setpoint(timestamp);
+            pos_vel_acc_ctrl.publish_position_setpoint(timestamp);
         }
 
         // Stop the counter
@@ -276,17 +277,30 @@ void OffboardControl::set_setpoint() {
         set_offboard_control_mode(POSITION);
         Eigen::Vector3d pos_sp(0.f, 0.f, -10.f);
         test_gen.step_pos_setpoint(pos_sp);
+        this->check_if_at_setpoint();
         break;
     }
     case 1: {
-        // Setup timed finish
-        static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+        // Timer to wait for transients to end
+        static auto step_start_time = std::chrono::high_resolution_clock::now();
 
         set_offboard_control_mode(BODY_RATE);
-        Eigen::Vector3d rpy_sp(40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
-        this->step_rpy_test(rpy_sp, roll_step_start_time);
+        Eigen::Vector3d pos_sp(5, 5, -15);
+        test_gen.step_pos_setpoint(pos_sp);
+
+        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
+            this->check_if_at_setpoint();
         break;
     }
+    // case 1: {
+    //     // Setup timed finish
+    //     static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
+
+    //     set_offboard_control_mode(BODY_RATE);
+    //     Eigen::Vector3d rpy_sp(40.f, 0.f, pos_vel_acc_ctrl._yawd * 180 / M_PI);
+    //     this->step_rpy_test(rpy_sp, roll_step_start_time);
+    //     break;
+    // }
     // case 2: {
     //     // Setup timed finish
     //     static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
@@ -312,7 +326,9 @@ void OffboardControl::set_setpoint() {
         break;
     }
     }
+}
 
+void OffboardControl::check_if_at_setpoint() {
     auto tmp_ep = pos_vel_acc_ctrl._pd - pos_vel_acc_ctrl._p;
     auto tmp_ev = pos_vel_acc_ctrl._vd - pos_vel_acc_ctrl._v;
     RCLCPP_INFO(this->get_logger(), "current_setpoint_step: %ld, tmp_ep: %f, %f, %f, tmp_ev: %f, %f, %f", current_setpoint_step, tmp_ep(0), tmp_ep(1),

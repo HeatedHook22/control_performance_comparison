@@ -61,6 +61,7 @@ class OffboardControl : public rclcpp::Node {
     bool bypass_update_control = false;
 
     // Control Setpoint Commands
+    void check_if_at_setpoint();
     void set_setpoint();
     test_generation test_gen{pos_vel_acc_ctrl, att_rate_ctrl};
     uint64_t current_setpoint_step = 0;
