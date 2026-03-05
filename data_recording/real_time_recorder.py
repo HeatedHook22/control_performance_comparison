@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import time
 import math
 import numpy as np
+import csv
+import itertools
 
 class data_recorder(Node):
     def __init__(self):
@@ -374,12 +376,56 @@ class data_recorder(Node):
                 rms_start_times=cropped_rms_starts
             )
 
+    def export_test_region_to_csv(self, global_start, global_end, filename):
+        if global_start is None or global_end is None:
+            return
+
+        columns = {}
+
+        def extract_cropped(times, data_tuple, sp_times, sp_data_tuple, prefix, labels):
+            if not times: return
+            t_arr = np.array(times)
+            mask = (t_arr >= global_start) & (t_arr <= global_end)
+            columns[f'{prefix}_Time'] = t_arr[mask] - global_start
+            for i, d in enumerate(data_tuple):
+                columns[f'{prefix}_{labels[i]}'] = np.array(d)[mask]
+            
+            if sp_times and len(sp_times) > 0:
+                spt_arr = np.array(sp_times)
+                sp_mask = (spt_arr >= global_start) & (spt_arr <= global_end)
+                columns[f'{prefix}_SP_Time'] = spt_arr[sp_mask] - global_start
+                for i, d in enumerate(sp_data_tuple):
+                    columns[f'{prefix}_SP_{labels[i]}'] = np.array(d)[sp_mask]
+
+        extract_cropped(self.attitude_times, (self.roll_data, self.pitch_data, self.yaw_data),
+                        self.attitude_sp_times, (self.roll_sp_data, self.pitch_sp_data, self.yaw_sp_data),
+                        "Attitude", ["Roll", "Pitch", "Yaw"])
+        
+        extract_cropped(self.rates_times, (self.roll_rate_data, self.pitch_rate_data, self.yaw_rate_data),
+                        self.rates_sp_times, (self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
+                        "Rates", ["RollRate", "PitchRate", "YawRate"])
+        
+        extract_cropped(self.position_times, (self.x_data, self.y_data, self.z_data),
+                        self.position_sp_times, (self.x_sp_data, self.y_sp_data, self.z_sp_data),
+                        "Position", ["X", "Y", "Z"])
+
+        if not columns:
+            return
+
+        keys = list(columns.keys())
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(keys)
+            writer.writerows(itertools.zip_longest(*[columns[k] for k in keys], fillvalue=''))
+
     def generate_graphs(self):
         if not self.position_times or not self.attitude_times:
             print("No data was received. Is the topic publishing?")
             return
 
         global_start, global_end = self.get_test_window()
+
+        self.export_test_region_to_csv(global_start, global_end, "data_recording/tmp/previous_run_test_region.csv")
 
         # 1. Generate Attitude Graphs
         self.generate_metric_graphs(
