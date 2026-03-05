@@ -8,6 +8,7 @@ from px4_msgs.msg import VehicleAttitudeSetpoint
 from px4_msgs.msg import VehicleRatesSetpoint 
 from px4_msgs.msg import VehicleOdometry
 from px4_msgs.msg import TrajectorySetpoint
+from px4_msgs.msg import OffboardControlMode
 from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
@@ -15,6 +16,7 @@ import math
 import numpy as np
 import csv
 import itertools
+import os
 
 class data_recorder(Node):
     def __init__(self):
@@ -35,7 +37,7 @@ class data_recorder(Node):
             qos_profile_sensor_data
         )
 
-        self.offboard_mode_subscription = self.create_subscription(
+        self.vehicle_status_subscription = self.create_subscription(
             VehicleStatus,
             '/fmu/out/vehicle_status_v2',
             self.status_callback,
@@ -70,6 +72,17 @@ class data_recorder(Node):
             self.angular_velocity_callback,
             qos_profile_sensor_data
         )
+
+        self.offboard_mode_subscription = self.create_subscription(
+            OffboardControlMode,
+            '/fmu/in/offboard_control_mode',
+            self.offboard_mode_callback,
+            qos_profile_sensor_data
+        )
+
+        # Track exact test region from control flags
+        self.test_mode_detected = None
+        self.test_region_times = []
 
         # Start at 0 (Init)
         self.previous_arming_state = 0
@@ -216,17 +229,36 @@ class data_recorder(Node):
             raise KeyboardInterrupt
         self.previous_arming_state = msg.arming_state
 
+    def offboard_mode_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_time = time.time() - self.start_time
+        
+        # Assuming Position = True is used for staging, the pure test starts when position drops
+        if msg.body_rate and not msg.attitude and not msg.position:
+            self.test_mode_detected = "body_rate"
+            self.test_region_times.append(current_time)
+        elif msg.attitude and not msg.position:
+            self.test_mode_detected = "attitude"
+            self.test_region_times.append(current_time)
+
     def get_test_window(self):
+        if self.test_mode_detected and self.test_region_times:
+            self.get_logger().info(f"Test region formally detected via OffboardControlMode: {self.test_mode_detected}")
+            return self.test_region_times[0], self.test_region_times[-1], self.test_mode_detected
+
+        # Fallbacks just in case the offboard mode topic isn't found
         if self.rates_sp_times:
-            self.get_logger().info("Test region anchored to Body Rates setpoints.")
-            return self.rates_sp_times[0], self.rates_sp_times[-1]
+            self.get_logger().info("Fallback: Test region anchored to Body Rates setpoints.")
+            return self.rates_sp_times[0], self.rates_sp_times[-1], "body_rate"
         elif self.attitude_sp_times:
-            self.get_logger().info("Test region anchored to Attitude setpoints.")
-            return self.attitude_sp_times[0], self.attitude_sp_times[-1]
+            self.get_logger().info("Fallback: Test region anchored to Attitude setpoints.")
+            return self.attitude_sp_times[0], self.attitude_sp_times[-1], "attitude"
         elif self.position_sp_times:
-            self.get_logger().info("Test region anchored to Position setpoints.")
-            return self.position_sp_times[0], self.position_sp_times[-1]
-        return None, None
+            self.get_logger().info("Fallback: Test region anchored to Position setpoints.")
+            return self.position_sp_times[0], self.position_sp_times[-1], "position"
+        return None, None, None
 
     def calculate_rms(self, actual_times, actual_data, sp_times, sp_data, test_start, test_end, fraction_of_rise_time = 0.95):
         actual_times = np.array(actual_times)
@@ -273,7 +305,7 @@ class data_recorder(Node):
         return None, None
 
     def create_plot(self, title, actual_times, actual_data, sp_times, sp_data, rms_texts, ylabels, filename, rms_start_times=None):
-        fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+        fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
         fig.suptitle(title, fontsize=16)
 
         colors = ['r', 'g', 'b']
@@ -291,15 +323,21 @@ class data_recorder(Node):
             # Deduplicate the legend so 'RMS Start' doesn't show up 100 times
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), loc="upper right")
+            
+            # Place legend outside the axes on the right
+            ax.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1.02, 1))
             
             ax.grid(True)
-            ax.text(0.02, 0.85, rms_texts[i], transform=ax.transAxes, fontsize=11,
+            
+            # Place text box outside the axes below the legend
+            ax.text(1.02, 0.05, rms_texts[i], transform=ax.transAxes, fontsize=11,
+                    verticalalignment='bottom',
                     bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
 
         axes[-1].set_xlabel('Time (seconds)')
 
-        fig.tight_layout()
+        # Restrict standard plots to the left 82% of the image, reserving the rest for external boxes
+        fig.tight_layout(rect=[0, 0, 0.82, 1])
         fig.savefig(filename)
 
     def generate_metric_graphs(self, metric_name, actual_times, actual_data, sp_times, sp_data, ylabels, rms_unit, file_prefix, global_start, global_end):
@@ -418,14 +456,112 @@ class data_recorder(Node):
             writer.writerow(keys)
             writer.writerows(itertools.zip_longest(*[columns[k] for k in keys], fillvalue=''))
 
+    def generate_comparison_graphs(self):
+        att_file = "data_recording/tmp/attitude_test_region.csv"
+        br_file = "data_recording/tmp/body_rate_test_region.csv"
+        
+        if not (os.path.exists(att_file) and os.path.exists(br_file)):
+            return
+            
+        self.get_logger().info("Both Attitude and Body Rate CSVs found. Generating comparison plots...")
+        
+        def load_csv(filepath):
+            data = {}
+            with open(filepath, 'r') as f:
+                reader = csv.reader(f)
+                try:
+                    headers = next(reader)
+                    for h in headers:
+                        data[h] = []
+                    for row in reader:
+                        for i, val in enumerate(row):
+                            if val.strip() != '':
+                                data[headers[i]].append(float(val))
+                except StopIteration:
+                    pass
+            for k in data:
+                data[k] = np.array(data[k])
+            return data
+            
+        att_data = load_csv(att_file)
+        br_data = load_csv(br_file)
+        
+        def plot_comp(metric, prefix, labels, ylabels, rms_unit):
+            if f'{prefix}_Time' not in att_data and f'{prefix}_Time' not in br_data:
+                return
+                
+            fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+            fig.suptitle(f'UAV {metric} vs. Time (Attitude vs Body Rate Mode)', fontsize=16)
+            
+            att_rms_texts = ["N/A", "N/A", "N/A"]
+            br_rms_texts = ["N/A", "N/A", "N/A"]
+            
+            for i, ax in enumerate(axes):
+                label = labels[i]
+                
+                # --- ATTITUDE MODE DATA ---
+                a_t = att_data.get(f'{prefix}_Time', np.array([]))
+                a_d = att_data.get(f'{prefix}_{label}', np.array([]))
+                a_spt = att_data.get(f'{prefix}_SP_Time', np.array([]))
+                a_spd = att_data.get(f'{prefix}_SP_{label}', np.array([]))
+                
+                if len(a_t) > 0 and len(a_spt) > 0:
+                    rms, ss_time = self.calculate_rms(a_t, a_d, a_spt, a_spd, 0, None)
+                    if rms is not None:
+                        att_rms_texts[i] = f"{rms:.3f}{rms_unit}"
+                        ax.axvline(x=ss_time, color='blue', linestyle=':', alpha=0.5, label='Att Mode RMS Start')
+                    ax.plot(a_spt, a_spd, color='blue', linestyle='--', linewidth=1.5, alpha=0.5, label='Att Mode SP')
+                    ax.plot(a_t, a_d, color='blue', linestyle='-', linewidth=2, label='Att Mode Actual')
+                
+                # --- BODY RATE MODE DATA ---
+                b_t = br_data.get(f'{prefix}_Time', np.array([]))
+                b_d = br_data.get(f'{prefix}_{label}', np.array([]))
+                b_spt = br_data.get(f'{prefix}_SP_Time', np.array([]))
+                b_spd = br_data.get(f'{prefix}_SP_{label}', np.array([]))
+                
+                if len(b_t) > 0 and len(b_spt) > 0:
+                    rms, ss_time = self.calculate_rms(b_t, b_d, b_spt, b_spd, 0, None)
+                    if rms is not None:
+                        br_rms_texts[i] = f"{rms:.3f}{rms_unit}"
+                        ax.axvline(x=ss_time, color='orange', linestyle=':', alpha=0.5, label='BR Mode RMS Start')
+                    ax.plot(b_spt, b_spd, color='orange', linestyle='--', linewidth=1.5, alpha=0.5, label='BR Mode SP')
+                    ax.plot(b_t, b_d, color='orange', linestyle='-', linewidth=2, label='BR Mode Actual')
+                
+                ax.set_ylabel(ylabels[i])
+                
+                rms_box_text = f"Att Mode RMS: {att_rms_texts[i]}\nBR Mode RMS: {br_rms_texts[i]}"
+                
+                # Place comparison text box outside the axes
+                ax.text(1.02, 0.05, rms_box_text, transform=ax.transAxes, fontsize=10,
+                        verticalalignment='bottom',
+                        bbox=dict(facecolor='white', edgecolor='black', alpha=0.8))
+                
+                handles, l = ax.get_legend_handles_labels()
+                by_label = dict(zip(l, handles))
+                
+                # Place comparison legend outside the axes
+                ax.legend(by_label.values(), by_label.keys(), loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=8)
+                ax.grid(True)
+                
+            axes[-1].set_xlabel('Time (seconds)')
+            
+            # Restrict plots to the left 82%
+            fig.tight_layout(rect=[0, 0, 0.82, 1])
+            fig.savefig(f"data_recording/tmp/comparison_{prefix.lower()}.png")
+            
+        plot_comp("Attitude", "Attitude", ["Roll", "Pitch", "Yaw"], ['Roll (°)', 'Pitch (°)', 'Yaw (°)'], "°")
+        plot_comp("Body Rates", "Rates", ["RollRate", "PitchRate", "YawRate"], ['Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'], "°/s")
+        plot_comp("Local Position", "Position", ["X", "Y", "Z"], ['x (m)', 'y (m)', 'z (m)'], "m")
+
     def generate_graphs(self):
         if not self.position_times or not self.attitude_times:
             print("No data was received. Is the topic publishing?")
             return
 
-        global_start, global_end = self.get_test_window()
+        global_start, global_end, test_mode = self.get_test_window()
 
-        self.export_test_region_to_csv(global_start, global_end, "data_recording/tmp/previous_run_test_region.csv")
+        if test_mode is not None:
+            self.export_test_region_to_csv(global_start, global_end, f"data_recording/tmp/{test_mode}_test_region.csv")
 
         # 1. Generate Attitude Graphs
         self.generate_metric_graphs(
@@ -471,6 +607,7 @@ class data_recorder(Node):
                 global_end=global_end
             )
 
+        self.generate_comparison_graphs()
         # plt.show()
 
 def main(args=None):
