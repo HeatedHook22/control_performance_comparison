@@ -68,6 +68,7 @@ class data_recorder(Node):
         y = math.atan2(2*(q[0]*q[3]+q[1]*q[2]), 1-2*(q[2]*q[2]+q[3]*q[3]))
         return math.degrees(r), math.degrees(p), math.degrees(y)
 
+    # Callbacks
     def pos_cb(self, msg): self.pos.append(self.get_time(), msg.x, msg.y, msg.z)
     def pos_sp_cb(self, msg): self.pos_sp.append(self.get_time(), msg.position[0], msg.position[1], msg.position[2])
     def att_cb(self, msg): self.att.append(self.get_time(), *self.q2rpy(msg.q))
@@ -96,7 +97,7 @@ class data_recorder(Node):
             raise KeyboardInterrupt
         self.previous_arming_state = msg.arming_state
 
-    def calculate_rms(self, actual_times, actual_data, sp_times, sp_data, test_start, test_end):
+    def calculate_rms(self, actual_times, actual_data, sp_times, sp_data, test_start, test_end, fraction_of_final_value = 0.95):
         actual_times, actual_data = np.array(actual_times), np.array(actual_data)
         sp_times, sp_data = np.array(sp_times), np.array(sp_data)
         sb = max(sp_times[0], test_start) if test_start is not None else sp_times[0]
@@ -109,7 +110,7 @@ class data_recorder(Node):
             step_range = a_sp[-1] - v_d[0]
             idx = 0
             if abs(step_range) > 1e-3:
-                th = v_d[0] + 0.95 * step_range
+                th = v_d[0] + fraction_of_final_value * step_range
                 cr = np.where(v_d >= th)[0] if step_range > 0 else np.where(v_d <= th)[0]
                 if len(cr) > 0: idx = cr[0]
             ss_t, ss_e = v_t[idx:], err[idx:]
