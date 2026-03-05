@@ -3,6 +3,8 @@
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_control_mode.hpp>
+#include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
+#include <px4_msgs/msg/vehicle_torque_setpoint.hpp>
 
 #include <eigen3/Eigen/Geometry>
 #include <math.h>
@@ -39,6 +41,8 @@ class OffboardControl : public rclcpp::Node {
     // publishers
     rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_publisher_;
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
+    rclcpp::Publisher<px4_msgs::msg::VehicleThrustSetpoint>::SharedPtr vehicle_thrust_setpoint_publisher_;
+    rclcpp::Publisher<px4_msgs::msg::VehicleTorqueSetpoint>::SharedPtr vehicle_torque_setpoint_publisher_;
 
     // Controller objects
     pos_vel_acc pos_vel_acc_ctrl{};
