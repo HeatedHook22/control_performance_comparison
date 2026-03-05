@@ -9,6 +9,8 @@ from px4_msgs.msg import VehicleRatesSetpoint
 from px4_msgs.msg import VehicleOdometry
 from px4_msgs.msg import TrajectorySetpoint
 from px4_msgs.msg import OffboardControlMode
+from px4_msgs.msg import VehicleThrustSetpoint
+from px4_msgs.msg import VehicleTorqueSetpoint
 from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
@@ -17,6 +19,22 @@ import numpy as np
 import csv
 import itertools
 import os
+
+class Series3D:
+    def __init__(self):
+        self.t = []
+        self.x = []
+        self.y = []
+        self.z = []
+
+    def append(self, t, x, y, z):
+        self.t.append(t)
+        self.x.append(x)
+        self.y.append(y)
+        self.z.append(z)
+
+    def data(self):
+        return (self.x, self.y, self.z)
 
 class data_recorder(Node):
     def __init__(self):
@@ -80,6 +98,34 @@ class data_recorder(Node):
             qos_profile_sensor_data
         )
 
+        self.thrust_subscription = self.create_subscription(
+            VehicleThrustSetpoint,
+            '/fmu/out/vehicle_thrust_setpoint',
+            self.thrust_callback,
+            qos_profile_sensor_data
+        )
+
+        self.thrust_sp_subscription = self.create_subscription(
+            VehicleThrustSetpoint,
+            '/fmu/in/vehicle_thrust_setpoint',
+            self.thrust_sp_callback,
+            qos_profile_sensor_data
+        )
+
+        self.torque_subscription = self.create_subscription(
+            VehicleTorqueSetpoint,
+            '/fmu/out/vehicle_torque_setpoint',
+            self.torque_callback,
+            qos_profile_sensor_data
+        )
+
+        self.torque_sp_subscription = self.create_subscription(
+            VehicleTorqueSetpoint,
+            '/fmu/in/vehicle_torque_setpoint',
+            self.torque_sp_callback,
+            qos_profile_sensor_data
+        )
+
         # Track exact test region from control flags
         self.test_mode_detected = None
         self.test_region_times = []
@@ -87,35 +133,21 @@ class data_recorder(Node):
         # Start at 0 (Init)
         self.previous_arming_state = 0
         
-        self.position_times = []
-        self.x_data = []
-        self.y_data = []
-        self.z_data = []
-
-        self.position_sp_times = []
-        self.x_sp_data = []
-        self.y_sp_data = []
-        self.z_sp_data = []
-
-        self.attitude_times = []
-        self.roll_data = []
-        self.pitch_data = []
-        self.yaw_data = []
+        # Data storage containers using helper class
+        self.pos = Series3D()
+        self.pos_sp = Series3D()
         
-        self.attitude_sp_times = []
-        self.roll_sp_data = []
-        self.pitch_sp_data = []
-        self.yaw_sp_data = []
-
-        self.rates_times = []
-        self.roll_rate_data = []
-        self.pitch_rate_data = []
-        self.yaw_rate_data = []
-
-        self.rates_sp_times = []
-        self.roll_rate_sp_data = []
-        self.pitch_rate_sp_data = []
-        self.yaw_rate_sp_data = []
+        self.att = Series3D()
+        self.att_sp = Series3D()
+        
+        self.rates = Series3D()
+        self.rates_sp = Series3D()
+        
+        self.thrust = Series3D()
+        self.thrust_sp = Series3D()
+        
+        self.torque = Series3D()
+        self.torque_sp = Series3D()
 
         self.start_time = None
         self.get_logger().info('Position Plotter Node started. Recording data...')
@@ -126,22 +158,14 @@ class data_recorder(Node):
             self.start_time = time.time()
             
         current_time = time.time() - self.start_time
-        
-        self.position_times.append(current_time)
-        self.x_data.append(msg.x)
-        self.y_data.append(msg.y)
-        self.z_data.append(msg.z)
+        self.pos.append(current_time, msg.x, msg.y, msg.z)
 
     def position_setpoint_callback(self, msg):
         if self.start_time is None:
             self.start_time = time.time()
 
         current_time = time.time() - self.start_time
-        
-        self.position_sp_times.append(current_time)
-        self.x_sp_data.append(msg.position[0])
-        self.y_sp_data.append(msg.position[1])
-        self.z_sp_data.append(msg.position[2])
+        self.pos_sp.append(current_time, msg.position[0], msg.position[1], msg.position[2])
 
     def attitude_callback(self, msg):
         if self.start_time is None:
@@ -169,10 +193,7 @@ class data_recorder(Node):
         cosy_cosp = 1 - 2 * (q[2] * q[2] + q[3] * q[3])
         yaw = math.atan2(siny_cosp, cosy_cosp)
 
-        self.attitude_times.append(current_time)
-        self.roll_data.append(math.degrees(roll))
-        self.pitch_data.append(math.degrees(pitch))
-        self.yaw_data.append(math.degrees(yaw))
+        self.att.append(current_time, math.degrees(roll), math.degrees(pitch), math.degrees(yaw))
 
     # SETPOINT CALLBACK (Identical math, but uses msg.q_d)
     def attitude_setpoint_callback(self, msg):
@@ -197,30 +218,49 @@ class data_recorder(Node):
         cosy_cosp = 1 - 2 * (q[2] * q[2] + q[3] * q[3])
         yaw = math.atan2(siny_cosp, cosy_cosp)
 
-        self.attitude_sp_times.append(current_time)
-        self.roll_sp_data.append(math.degrees(roll))
-        self.pitch_sp_data.append(math.degrees(pitch))
-        self.yaw_sp_data.append(math.degrees(yaw))
+        self.att_sp.append(current_time, math.degrees(roll), math.degrees(pitch), math.degrees(yaw))
 
     def angular_velocity_callback(self, msg):
         if self.start_time is None:
             self.start_time = time.time()
             
         current_time = time.time() - self.start_time
-        self.rates_times.append(current_time)
-        self.roll_rate_data.append(math.degrees(msg.angular_velocity[0]))
-        self.pitch_rate_data.append(math.degrees(msg.angular_velocity[1]))
-        self.yaw_rate_data.append(math.degrees(msg.angular_velocity[2]))
+        self.rates.append(current_time, math.degrees(msg.angular_velocity[0]), math.degrees(msg.angular_velocity[1]), math.degrees(msg.angular_velocity[2]))
 
     def rates_setpoint_callback(self, msg):
         if self.start_time is None:
             self.start_time = time.time()
             
         current_time = time.time() - self.start_time
-        self.rates_sp_times.append(current_time)
-        self.roll_rate_sp_data.append(math.degrees(msg.roll))
-        self.pitch_rate_sp_data.append(math.degrees(msg.pitch))
-        self.yaw_rate_sp_data.append(math.degrees(msg.yaw))
+        self.rates_sp.append(current_time, math.degrees(msg.roll), math.degrees(msg.pitch), math.degrees(msg.yaw))
+
+    def thrust_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_time = time.time() - self.start_time
+        self.thrust.append(current_time, msg.xyz[0], msg.xyz[1], msg.xyz[2])
+
+    def thrust_sp_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_time = time.time() - self.start_time
+        self.thrust_sp.append(current_time, msg.xyz[0], msg.xyz[1], msg.xyz[2])
+
+    def torque_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_time = time.time() - self.start_time
+        self.torque.append(current_time, msg.xyz[0], msg.xyz[1], msg.xyz[2])
+
+    def torque_sp_callback(self, msg):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_time = time.time() - self.start_time
+        self.torque_sp.append(current_time, msg.xyz[0], msg.xyz[1], msg.xyz[2])
 
     def status_callback(self, msg):
         if self.previous_arming_state == 2 and msg.arming_state != 2:
@@ -249,15 +289,15 @@ class data_recorder(Node):
             return self.test_region_times[0], self.test_region_times[-1], self.test_mode_detected
 
         # Fallbacks just in case the offboard mode topic isn't found
-        if self.rates_sp_times:
+        if self.rates_sp.t:
             self.get_logger().info("Fallback: Test region anchored to Body Rates setpoints.")
-            return self.rates_sp_times[0], self.rates_sp_times[-1], "body_rate"
-        elif self.attitude_sp_times:
+            return self.rates_sp.t[0], self.rates_sp.t[-1], "body_rate"
+        elif self.att_sp.t:
             self.get_logger().info("Fallback: Test region anchored to Attitude setpoints.")
-            return self.attitude_sp_times[0], self.attitude_sp_times[-1], "attitude"
-        elif self.position_sp_times:
+            return self.att_sp.t[0], self.att_sp.t[-1], "attitude"
+        elif self.pos_sp.t:
             self.get_logger().info("Fallback: Test region anchored to Position setpoints.")
-            return self.position_sp_times[0], self.position_sp_times[-1], "position"
+            return self.pos_sp.t[0], self.pos_sp.t[-1], "position"
         return None, None, None
 
     def calculate_rms(self, actual_times, actual_data, sp_times, sp_data, test_start, test_end, fraction_of_rise_time = 0.95):
@@ -355,7 +395,6 @@ class data_recorder(Node):
 
         axes[-1].set_xlabel('Time (seconds)')
         fig.tight_layout(rect=[0, 0, 0.82, 1])
-        # INCREASED DPI TO 300 FOR HIGH QUALITY
         fig.savefig(filename, dpi=300)
 
     def generate_metric_graphs(self, metric_name, actual_times, actual_data, sp_times, sp_data, ylabels, rms_unit, file_prefix, global_start, global_end):
@@ -439,17 +478,26 @@ class data_recorder(Node):
                 filename=f"data_recording/tmp/previous_run_{file_prefix}_cropped.png"
             )
 
-    def export_test_region_to_csv(self, global_start, global_end, filename):
+    def export_test_region_to_csv(self, global_start, global_end, filename, metrics_list):
         if global_start is None or global_end is None:
             return
 
         columns = {}
 
-        def extract_cropped(times, data_tuple, sp_times, sp_data_tuple, prefix, labels):
-            if not times: return
+        for m in metrics_list:
+            times = m['actual_times']
+            data_tuple = m['actual_data']
+            sp_times = m['sp_times']
+            sp_data_tuple = m['sp_data']
+            prefix = m['csv_prefix']
+            labels = m['labels']
+            
+            if not times: continue
+            
             t_arr = np.array(times)
             mask = (t_arr >= global_start) & (t_arr <= global_end)
             columns[f'{prefix}_Time'] = t_arr[mask] - global_start
+            
             for i, d in enumerate(data_tuple):
                 columns[f'{prefix}_{labels[i]}'] = np.array(d)[mask]
             
@@ -460,18 +508,6 @@ class data_recorder(Node):
                 for i, d in enumerate(sp_data_tuple):
                     columns[f'{prefix}_SP_{labels[i]}'] = np.array(d)[sp_mask]
 
-        extract_cropped(self.attitude_times, (self.roll_data, self.pitch_data, self.yaw_data),
-                        self.attitude_sp_times, (self.roll_sp_data, self.pitch_sp_data, self.yaw_sp_data),
-                        "Attitude", ["Roll", "Pitch", "Yaw"])
-        
-        extract_cropped(self.rates_times, (self.roll_rate_data, self.pitch_rate_data, self.yaw_rate_data),
-                        self.rates_sp_times, (self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
-                        "Rates", ["RollRate", "PitchRate", "YawRate"])
-        
-        extract_cropped(self.position_times, (self.x_data, self.y_data, self.z_data),
-                        self.position_sp_times, (self.x_sp_data, self.y_sp_data, self.z_sp_data),
-                        "Position", ["X", "Y", "Z"])
-
         if not columns:
             return
 
@@ -481,7 +517,7 @@ class data_recorder(Node):
             writer.writerow(keys)
             writer.writerows(itertools.zip_longest(*[columns[k] for k in keys], fillvalue=''))
 
-    def generate_comparison_graphs(self):
+    def generate_comparison_graphs(self, metrics_list):
         att_file = "data_recording/tmp/attitude_test_region.csv"
         br_file = "data_recording/tmp/body_rate_test_region.csv"
         
@@ -539,84 +575,126 @@ class data_recorder(Node):
                 'rms_start_times': rms_starts
             }
 
-        def plot_comp(metric, prefix, labels, ylabels, rms_unit):
+        for m in metrics_list:
+            prefix = m['csv_prefix']
+            
             if f'{prefix}_Time' not in att_data and f'{prefix}_Time' not in br_data:
-                return
+                continue
             
             runs = []
-            att_run = extract_run(att_data, prefix, labels, rms_unit, 'blue', 'Att Mode')
+            att_run = extract_run(att_data, prefix, m['labels'], m['rms_unit'], 'blue', 'Att Mode')
             if att_run: runs.append(att_run)
             
-            br_run = extract_run(br_data, prefix, labels, rms_unit, 'orange', 'BR Mode')
+            br_run = extract_run(br_data, prefix, m['labels'], m['rms_unit'], 'orange', 'BR Mode')
             if br_run: runs.append(br_run)
             
             self.create_plot(
-                title=f'UAV {metric} vs. Time (Attitude vs Body Rate Mode)',
+                title=f"UAV {m['metric_name']} vs. Time (Attitude vs Body Rate Mode)",
                 plot_runs=runs,
-                ylabels=ylabels,
-                filename=f"data_recording/tmp/comparison_{prefix.lower()}.png"
+                ylabels=m['ylabels'],
+                filename=f"data_recording/tmp/comparison_{m['file_prefix']}.png"
             )
-            
-        plot_comp("Attitude", "Attitude", ["Roll", "Pitch", "Yaw"], ['Roll (°)', 'Pitch (°)', 'Yaw (°)'], "°")
-        plot_comp("Body Rates", "Rates", ["RollRate", "PitchRate", "YawRate"], ['Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'], "°/s")
-        plot_comp("Local Position", "Position", ["X", "Y", "Z"], ['x (m)', 'y (m)', 'z (m)'], "m")
 
     def generate_graphs(self):
-        if not self.position_times or not self.attitude_times:
+        if not self.pos.t or not self.att.t:
             print("No data was received. Is the topic publishing?")
             return
 
         global_start, global_end, test_mode = self.get_test_window()
 
+        # CENTRALIZED METRIC CONFIGURATION
+        metrics_list = []
+
+        metrics_list.append({
+            'metric_name': "Attitude",
+            'file_prefix': "attitude",
+            'csv_prefix': "Attitude",
+            'labels': ["Roll", "Pitch", "Yaw"],
+            'ylabels': ('Roll (°)', 'Pitch (°)', 'Yaw (°)'),
+            'rms_unit': "°",
+            'actual_times': self.att.t,
+            'actual_data': self.att.data(),
+            'sp_times': self.att_sp.t,
+            'sp_data': self.att_sp.data()
+        })
+
+        if self.rates.t:
+            metrics_list.append({
+                'metric_name': "Body Rates",
+                'file_prefix': "rates",
+                'csv_prefix': "Rates",
+                'labels': ["RollRate", "PitchRate", "YawRate"],
+                'ylabels': ('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'),
+                'rms_unit': "°/s",
+                'actual_times': self.rates.t,
+                'actual_data': self.rates.data(),
+                'sp_times': self.rates_sp.t,
+                'sp_data': self.rates_sp.data()
+            })
+
+        if self.pos.t:
+            metrics_list.append({
+                'metric_name': "Local Position",
+                'file_prefix': "position",
+                'csv_prefix': "Position",
+                'labels': ["X", "Y", "Z"],
+                'ylabels': ('x (m)', 'y (m)', 'z (m)'),
+                'rms_unit': "m",
+                'actual_times': self.pos.t,
+                'actual_data': self.pos.data(),
+                'sp_times': self.pos_sp.t,
+                'sp_data': self.pos_sp.data()
+            })
+
+        if self.thrust.t:
+            metrics_list.append({
+                'metric_name': "Thrust",
+                'file_prefix': "thrust",
+                'csv_prefix': "Thrust",
+                'labels': ["X", "Y", "Z"],
+                'ylabels': ('Thrust X (norm)', 'Thrust Y (norm)', 'Thrust Z (norm)'),
+                'rms_unit': "",
+                'actual_times': self.thrust.t,
+                'actual_data': self.thrust.data(),
+                'sp_times': self.thrust_sp.t,
+                'sp_data': self.thrust_sp.data()
+            })
+
+        if self.torque.t:
+            metrics_list.append({
+                'metric_name': "Torque",
+                'file_prefix': "torque",
+                'csv_prefix': "Torque",
+                'labels': ["X", "Y", "Z"],
+                'ylabels': ('Torque X (norm)', 'Torque Y (norm)', 'Torque Z (norm)'),
+                'rms_unit': "",
+                'actual_times': self.torque.t,
+                'actual_data': self.torque.data(),
+                'sp_times': self.torque_sp.t,
+                'sp_data': self.torque_sp.data()
+            })
+
+        # 1. Export unified CSV
         if test_mode is not None:
-            self.export_test_region_to_csv(global_start, global_end, f"data_recording/tmp/{test_mode}_test_region.csv")
+            self.export_test_region_to_csv(global_start, global_end, f"data_recording/tmp/{test_mode}_test_region.csv", metrics_list)
 
-        # 1. Generate Attitude Graphs
-        self.generate_metric_graphs(
-            metric_name="Attitude",
-            actual_times=self.attitude_times,
-            actual_data=(self.roll_data, self.pitch_data, self.yaw_data),
-            sp_times=self.attitude_sp_times,
-            sp_data=(self.roll_sp_data, self.pitch_sp_data, self.yaw_sp_data),
-            ylabels=('Roll (°)', 'Pitch (°)', 'Yaw (°)'),
-            rms_unit="°",
-            file_prefix="attitude",
-            global_start=global_start,
-            global_end=global_end
-        )
-
-        # 2. Generate Body Rate Graphs
-        if self.rates_times:
+        # 2. Generate standard single-run graphs
+        for m in metrics_list:
             self.generate_metric_graphs(
-                metric_name="Body Rates",
-                actual_times=self.rates_times,
-                actual_data=(self.roll_rate_data, self.pitch_rate_data, self.yaw_rate_data),
-                sp_times=self.rates_sp_times,
-                sp_data=(self.roll_rate_sp_data, self.pitch_rate_sp_data, self.yaw_rate_sp_data),
-                ylabels=('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'),
-                rms_unit="°/s",
-                file_prefix="rates",
+                metric_name=m['metric_name'],
+                actual_times=m['actual_times'],
+                actual_data=m['actual_data'],
+                sp_times=m['sp_times'],
+                sp_data=m['sp_data'],
+                ylabels=m['ylabels'],
+                rms_unit=m['rms_unit'],
+                file_prefix=m['file_prefix'],
                 global_start=global_start,
                 global_end=global_end
             )
 
-        # 3. Generate Local Position Graphs
-        if self.position_times:
-            self.generate_metric_graphs(
-                metric_name="Local Position",
-                actual_times=self.position_times,
-                actual_data=(self.x_data, self.y_data, self.z_data),
-                sp_times=self.position_sp_times,
-                sp_data=(self.x_sp_data, self.y_sp_data, self.z_sp_data),
-                ylabels=('x (m)', 'y (m)', 'z (m)'),
-                rms_unit="m",
-                file_prefix="position",
-                global_start=global_start,
-                global_end=global_end
-            )
-
-        self.generate_comparison_graphs()
-        # plt.show()
+        # 3. Generate comparison graphs
+        self.generate_comparison_graphs(metrics_list)
 
 def main(args=None):
     rclpy.init(args=args)
