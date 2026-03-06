@@ -41,8 +41,8 @@ class OffboardControl : public rclcpp::Node {
     // publishers
     rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_publisher_;
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
-    rclcpp::Publisher<px4_msgs::msg::VehicleThrustSetpoint>::SharedPtr vehicle_thrust_setpoint_publisher_;
-    rclcpp::Publisher<px4_msgs::msg::VehicleTorqueSetpoint>::SharedPtr vehicle_torque_setpoint_publisher_;
+    // rclcpp::Publisher<px4_msgs::msg::VehicleThrustSetpoint>::SharedPtr vehicle_thrust_setpoint_publisher_;
+    // rclcpp::Publisher<px4_msgs::msg::VehicleTorqueSetpoint>::SharedPtr vehicle_torque_setpoint_publisher_;
 
     // Controller objects
     pos_vel_acc pos_vel_acc_ctrl{};

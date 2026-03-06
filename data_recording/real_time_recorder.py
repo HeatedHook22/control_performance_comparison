@@ -3,8 +3,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from px4_msgs.msg import (VehicleLocalPosition, VehicleStatus, VehicleAttitude, 
                         VehicleAttitudeSetpoint, VehicleRatesSetpoint, VehicleOdometry, 
-                        TrajectorySetpoint, OffboardControlMode, VehicleThrustSetpoint, 
-                        VehicleTorqueSetpoint)
+                        TrajectorySetpoint, OffboardControlMode)
 from rclpy.executors import ExternalShutdownException
 import matplotlib.pyplot as plt
 import time
@@ -37,11 +36,7 @@ class data_recorder(Node):
             (VehicleRatesSetpoint, '/fmu/in/vehicle_rates_setpoint', self.rates_sp_cb),
             (VehicleOdometry, '/fmu/out/vehicle_odometry', self.rates_cb),
             (OffboardControlMode, '/fmu/in/offboard_control_mode', self.offboard_cb),
-            (VehicleThrustSetpoint, '/fmu/out/vehicle_thrust_setpoint', self.thrust_cb),
-            (VehicleThrustSetpoint, '/fmu/in/vehicle_thrust_setpoint', self.thrust_sp_cb),
-            (VehicleTorqueSetpoint, '/fmu/out/vehicle_torque_setpoint', self.torque_cb),
-            (VehicleTorqueSetpoint, '/fmu/in/vehicle_torque_setpoint', self.torque_sp_cb),
-            (VehicleStatus, '/fmu/out/vehicle_status_v2', self.status_cb)
+            (VehicleStatus, '/fmu/out/vehicle_status_v1', self.status_cb)
         ]
         for msg_type, topic, cb in self.subs:
             self.create_subscription(msg_type, topic, cb, qos)
@@ -49,8 +44,6 @@ class data_recorder(Node):
         self.pos, self.pos_sp = Series3D(), Series3D()
         self.att, self.att_sp = Series3D(), Series3D()
         self.rates, self.rates_sp = Series3D(), Series3D()
-        self.thrust, self.thrust_sp = Series3D(), Series3D()
-        self.torque, self.torque_sp = Series3D(), Series3D()
 
         self.test_mode_detected, self.test_region_times = None, []
         self.start_time, self.previous_arming_state = None, 0
@@ -75,10 +68,6 @@ class data_recorder(Node):
     def att_sp_cb(self, msg): self.att_sp.append(self.get_time(), *self.q2rpy(msg.q_d))
     def rates_cb(self, msg): self.rates.append(self.get_time(), *np.degrees(msg.angular_velocity))
     def rates_sp_cb(self, msg): self.rates_sp.append(self.get_time(), math.degrees(msg.roll), math.degrees(msg.pitch), math.degrees(msg.yaw))
-    def thrust_cb(self, msg): self.thrust.append(self.get_time(), *msg.xyz)
-    def thrust_sp_cb(self, msg): self.thrust_sp.append(self.get_time(), *msg.xyz)
-    def torque_cb(self, msg): self.torque.append(self.get_time(), *msg.xyz)
-    def torque_sp_cb(self, msg): self.torque_sp.append(self.get_time(), *msg.xyz)
 
     def offboard_cb(self, msg):
         t = self.get_time()
@@ -165,9 +154,7 @@ class data_recorder(Node):
         configs = [
             ('Attitude', 'attitude', 'Attitude', ['Roll', 'Pitch', 'Yaw'], ('Roll (°)', 'Pitch (°)', 'Yaw (°)'), "°", self.att, self.att_sp),
             ('Body Rates', 'rates', 'Rates', ['RollRate', 'PitchRate', 'YawRate'], ('Roll Rate (°/s)', 'Pitch Rate (°/s)', 'Yaw Rate (°/s)'), "°/s", self.rates, self.rates_sp),
-            ('Position', 'position', 'Position', ['X', 'Y', 'Z'], ('X (m)', 'Y (m)', 'Z (m)'), "m", self.pos, self.pos_sp),
-            ('Thrust', 'thrust', 'Thrust', ['X', 'Y', 'Z'], ('Thrust X', 'Thrust Y', 'Thrust Z'), "", self.thrust, self.thrust_sp),
-            ('Torque', 'torque', 'Torque', ['X', 'Y', 'Z'], ('Torque X', 'Torque Y', 'Torque Z'), "", self.torque, self.torque_sp)
+            ('Position', 'position', 'Position', ['X', 'Y', 'Z'], ('X (m)', 'Y (m)', 'Z (m)'), "m", self.pos, self.pos_sp)
         ]
         
         if mode: 

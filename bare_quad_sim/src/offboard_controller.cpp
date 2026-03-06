@@ -73,8 +73,8 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
     pos_vel_acc_ctrl.trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     att_rate_ctrl.vehicle_attitude_setpoint_publisher_ = this->create_publisher<VehicleAttitudeSetpoint>("/fmu/in/vehicle_attitude_setpoint_v1", 10);
     att_rate_ctrl.vehicle_rates_setpoint_publisher_ = this->create_publisher<VehicleRatesSetpoint>("/fmu/in/vehicle_rates_setpoint", 10);
-    vehicle_thrust_setpoint_publisher_ = this->create_publisher<VehicleThrustSetpoint>("/fmu/in/vehicle_thrust_setpoint", 10);
-    vehicle_torque_setpoint_publisher_ = this->create_publisher<VehicleTorqueSetpoint>("/fmu/in/vehicle_torque_setpoint", 10);
+    // vehicle_thrust_setpoint_publisher_ = this->create_publisher<VehicleThrustSetpoint>("/fmu/in/vehicle_thrust_setpoint", 10);
+    // vehicle_torque_setpoint_publisher_ = this->create_publisher<VehicleTorqueSetpoint>("/fmu/in/vehicle_torque_setpoint", 10);
 
     // Subscribers
     pos_vel_acc_ctrl.vehicle_local_position_subscription_ = this->create_subscription<VehicleLocalPosition>(
@@ -125,21 +125,21 @@ OffboardControl::OffboardControl() : Node("offboard_control") {
             att_rate_ctrl.publish_rates_setpoint(timestamp);
             pos_vel_acc_ctrl.publish_position_setpoint(timestamp);
 
-            // Publish thrust and torque setpoints exclusively for the Python plotter to catch
-            VehicleThrustSetpoint thrust_msg{};
-            thrust_msg.timestamp = timestamp;
-            thrust_msg.xyz[0] = 0.0f;
-            thrust_msg.xyz[1] = 0.0f;
-            thrust_msg.xyz[2] = att_rate_ctrl._thrustdn;
-            vehicle_thrust_setpoint_publisher_->publish(thrust_msg);
+            // // Publish thrust and torque setpoints exclusively for the Python plotter to catch
+            // VehicleThrustSetpoint thrust_msg{};
+            // thrust_msg.timestamp = timestamp;
+            // thrust_msg.xyz[0] = 0.0f;
+            // thrust_msg.xyz[1] = 0.0f;
+            // thrust_msg.xyz[2] = att_rate_ctrl._thrustdn;
+            // vehicle_thrust_setpoint_publisher_->publish(thrust_msg);
 
-            // Currently not calculating raw torque, so we publish zeros just to give the Python script a timestamp anchor
-            VehicleTorqueSetpoint torque_msg{};
-            torque_msg.timestamp = timestamp;
-            torque_msg.xyz[0] = 0.0f;
-            torque_msg.xyz[1] = 0.0f;
-            torque_msg.xyz[2] = 0.0f;
-            vehicle_torque_setpoint_publisher_->publish(torque_msg);
+            // // Currently not calculating raw torque, so we publish zeros just to give the Python script a timestamp anchor
+            // VehicleTorqueSetpoint torque_msg{};
+            // torque_msg.timestamp = timestamp;
+            // torque_msg.xyz[0] = 0.0f;
+            // torque_msg.xyz[1] = 0.0f;
+            // torque_msg.xyz[2] = 0.0f;
+            // vehicle_torque_setpoint_publisher_->publish(torque_msg);
         }
 
         // Stop the counter
@@ -188,7 +188,7 @@ void OffboardControl::publish_offboard_control_mode() {
     msg.acceleration = _enable_acceleration_cmd;
     msg.attitude = _enable_attitude_cmd;
     msg.body_rate = _enable_rate_cmd;
-    msg.thrust_and_torque = false; // Explicitly false so PX4's internal physics still control the motors
+    // msg.thrust_and_torque = false; // Explicitly false so PX4's internal physics still control the motors
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     offboard_control_mode_publisher_->publish(msg);
 }
