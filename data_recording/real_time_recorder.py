@@ -39,6 +39,18 @@ class data_recorder(Node):
             self.get_logger().error(f"Failed to load plot_config.json: {e}")
             raise
 
+        # Dynamically extract the output directory from the first CSV file path in the JSON
+        try:
+            first_csv_path = self.config['comparison_modes'][0]['file_path']
+            self.output_dir = os.path.dirname(first_csv_path)
+            if not self.output_dir: 
+                self.output_dir = '.'
+        except (KeyError, IndexError):
+            self.output_dir = '.'
+        
+        # Ensure the directory exists
+        os.makedirs(self.output_dir, exist_ok=True)
+
         self.subs = [
             (VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1', self.pos_cb),
             (TrajectorySetpoint, '/fmu/in/trajectory_setpoint', self.pos_sp_cb),
@@ -215,7 +227,7 @@ class data_recorder(Node):
         print(f"[INFO] Saved plot -> {filename}")
 
     def append_to_summary_table(self, summary_data):
-        summary_file = "data_recording/tmp/rms_summary_table.csv"
+        summary_file = os.path.join(self.output_dir, "rms_summary_table.csv")
         file_exists = os.path.isfile(summary_file)
         
         # Dynamically build headers from JSON
@@ -285,7 +297,8 @@ class data_recorder(Node):
             test_mode = self.test_mode_detected
 
             if test_mode: 
-                self.export_csv(test_start, test_end, f"data_recording/tmp/{test_mode}_test_region.csv", plot_configurations)
+                export_path = os.path.join(self.output_dir, f"{test_mode}_test_region.csv")
+                self.export_csv(test_start, test_end, export_path, plot_configurations)
             else: 
                 print("[WARN] No specific test mode detected via OffboardControlMode. CSV export skipped.")
 
@@ -306,7 +319,9 @@ class data_recorder(Node):
                     summary_data.update({f"{metric_name}_{label}_Trk": parsed_tracking, f"{metric_name}_{label}_SS": parsed_steady_state, f"{metric_name}_{label}_Final": final_values[index]})
 
                 run_base_configuration = {'tracking_rms_vals': tracking_rms_values, 'steady_state_rms_vals': steady_state_rms_values, 'rms_starts': steady_state_start_times, 'tolerances': tolerance_values}
-                self.create_plot(f"UAV {metric_name} vs Time", [{**run_base_configuration, 'actual_times': actual_container.t, 'actual_data': actual_container.data(), 'sp_times': setpoint_container.t, 'sp_data': setpoint_container.data()}], y_axis_labels, f"data_recording/tmp/run_{file_prefix}.png")
+                
+                full_plot_path = os.path.join(self.output_dir, f"run_{file_prefix}.png")
+                self.create_plot(f"UAV {metric_name} vs Time", [{**run_base_configuration, 'actual_times': actual_container.t, 'actual_data': actual_container.data(), 'sp_times': setpoint_container.t, 'sp_data': setpoint_container.data()}], y_axis_labels, full_plot_path)
                 
                 if test_start is not None:
                     mask_actual = (np.array(actual_container.t) >= test_start) & (np.array(actual_container.t) <= test_end)
@@ -320,7 +335,8 @@ class data_recorder(Node):
                         'sp_data': [np.array(data)[mask_setpoint] for data in setpoint_container.data()],
                         'rms_starts': [start_time - test_start if start_time else None for start_time in steady_state_start_times]
                     }
-                    self.create_plot(f"UAV {metric_name} (Test Region)", [run_cropped_configuration], y_axis_labels, f"data_recording/tmp/run_{file_prefix}_cropped.png")
+                    cropped_plot_path = os.path.join(self.output_dir, f"run_{file_prefix}_cropped.png")
+                    self.create_plot(f"UAV {metric_name} (Test Region)", [run_cropped_configuration], y_axis_labels, cropped_plot_path)
 
             self.append_to_summary_table(summary_data)
             
@@ -396,7 +412,8 @@ class data_recorder(Node):
                 })
             
             if comparison_runs: 
-                self.create_plot(f"UAV {metric_name} Comparison", comparison_runs, y_axis_labels, f"data_recording/tmp/comparison_{csv_prefix.lower()}.png")
+                comp_plot_path = os.path.join(self.output_dir, f"comparison_{csv_prefix.lower()}.png")
+                self.create_plot(f"UAV {metric_name} Comparison", comparison_runs, y_axis_labels, comp_plot_path)
 
 def main():
     rclpy.init()
