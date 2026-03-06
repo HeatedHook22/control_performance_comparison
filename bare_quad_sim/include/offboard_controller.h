@@ -71,6 +71,8 @@ class OffboardControl : public rclcpp::Node {
     uint64_t current_setpoint_step = 0;
 
     // Test Helpers
+    void sinusoid_test(const Eigen::Vector3d &amplitude_sp, double frequency,
+                       const std::chrono::high_resolution_clock::time_point &step_start_time);
     void step_rpy_test(const Eigen::Vector3d &euler_deg_sp, const std::chrono::high_resolution_clock::time_point &step_start_time);
     void sinusoid_rpy_test(const Eigen::Vector3d &euler_deg_amplitude_sp, double frequency,
                            const std::chrono::high_resolution_clock::time_point &step_start_time);

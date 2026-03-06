@@ -20,6 +20,18 @@ bool test_generation::is_at_setpoint() {
 
 void test_generation::step_pos_setpoint(const Eigen::Vector3d &pos_sp) { pos_vel_acc_ctrl._pd = pos_sp; }
 
+void test_generation::sinusoid_setpoint(const Eigen::Vector3d &pos_sp, double frequency) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+    auto current_time = std::chrono::high_resolution_clock::now();
+    double time_sec = std::chrono::duration<double>(current_time - start_time).count();
+
+    auto pos_sp_sin = pos_sp * std::sin(time_sec * frequency * 2 * M_PI); // Sinusoidally vary the position setpoint with the given amplitude
+    auto pos_sp_compensated =
+        pos_sp_sin + pos_vel_acc_ctrl._p; // Add the sinusoidal variation to the current setpoint to avoid commanding large jumps
+
+    this->step_pos_setpoint(pos_sp_compensated); // Sinusoidally vary the position setpoint with the given amplitude
+}
+
 void test_generation::step_rpy_setpoint(const Eigen::Vector3d &euler_sp) { att_rate_ctrl._qd = att_rate_ctrl.euler2quaternion(euler_sp); }
 
 void test_generation::sinusoid_rpy_setpoint(const Eigen::Vector3d &euler_sp_amplitude, double frequency) {

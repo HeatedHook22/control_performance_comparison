@@ -11,6 +11,7 @@ class test_generation {
 
     bool is_at_setpoint();
     void step_pos_setpoint(const Eigen::Vector3d &pos_sp);
+    void sinusoid_setpoint(const Eigen::Vector3d &pos_sp, double frequency);
     void step_rpy_setpoint(const Eigen::Vector3d &euler_sp);
     void sinusoid_rpy_setpoint(const Eigen::Vector3d &euler_sp_amplitude, double frequency);
 
