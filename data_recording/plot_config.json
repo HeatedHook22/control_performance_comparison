@@ -1,0 +1,72 @@
+{
+  "comparison_modes": [
+    {
+      "mode_name": "attitude",
+      "file_path": "data_recording/tmp/attitude_test_region.csv",
+      "label": "Att Mode",
+      "color": "blue"
+    },
+    {
+      "mode_name": "body_rate",
+      "file_path": "data_recording/tmp/body_rate_test_region.csv",
+      "label": "BR Mode",
+      "color": "orange"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "Attitude",
+      "file_prefix": "attitude",
+      "csv_prefix": "Attitude",
+      "axis_labels": [
+        "Roll",
+        "Pitch",
+        "Yaw"
+      ],
+      "y_axis_labels": [
+        "Roll (°)",
+        "Pitch (°)",
+        "Yaw (°)"
+      ],
+      "measurement_unit": "°",
+      "actual_source": "att",
+      "setpoint_source": "att_sp"
+    },
+    {
+      "name": "Body Rates",
+      "file_prefix": "rates",
+      "csv_prefix": "Rates",
+      "axis_labels": [
+        "RollRate",
+        "PitchRate",
+        "YawRate"
+      ],
+      "y_axis_labels": [
+        "Roll Rate (°/s)",
+        "Pitch Rate (°/s)",
+        "Yaw Rate (°/s)"
+      ],
+      "measurement_unit": "°/s",
+      "actual_source": "rates",
+      "setpoint_source": "rates_sp"
+    },
+    {
+      "name": "Position",
+      "file_prefix": "position",
+      "csv_prefix": "Position",
+      "axis_labels": [
+        "X",
+        "Y",
+        "Z"
+      ],
+      "y_axis_labels": [
+        "X (m)",
+        "Y (m)",
+        "Z (m)"
+      ],
+      "measurement_unit": "m",
+      "actual_source": "pos",
+      "setpoint_source": "pos_sp"
+    }
+  ]
+}
