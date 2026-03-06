@@ -315,12 +315,13 @@ void OffboardControl::set_setpoint() {
         // Timer to wait for transients to end
         static auto step_start_time = std::chrono::high_resolution_clock::now();
 
-        set_offboard_control_mode(BODY_RATE);
+        set_offboard_control_mode(ATTITUDE);
         Eigen::Vector3d pos_sp(5, 5, -15);
         test_gen.step_pos_setpoint(pos_sp);
 
         if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
-            this->check_if_at_setpoint();
+            // this->check_if_at_setpoint();
+            current_setpoint_step++;
         break;
     }
     // case 1: {
