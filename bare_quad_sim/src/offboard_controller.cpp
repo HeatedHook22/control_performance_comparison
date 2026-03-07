@@ -299,31 +299,31 @@ void OffboardControl::set_setpoint() {
         this->check_if_at_setpoint();
         break;
     }
-    // case 1: {
-    //     // Timer to wait for transients to end
-    //     static auto step_start_time = std::chrono::high_resolution_clock::now();
-
-    //     set_offboard_control_mode(ATTITUDE);
-    //     Eigen::Vector3d pos_sp(1, 0, 0);
-    //     this->sinusoid_test(pos_sp, 0.25, step_start_time);
-
-    //     if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
-    //         this->check_if_at_setpoint();
-    //     break;
-    // }
     case 1: {
         // Timer to wait for transients to end
         static auto step_start_time = std::chrono::high_resolution_clock::now();
 
-        set_offboard_control_mode(ATTITUDE);
-        Eigen::Vector3d pos_sp(5, 5, -15);
-        test_gen.step_pos_setpoint(pos_sp);
+        set_offboard_control_mode(BODY_RATE);
+        Eigen::Vector3d pos_sp(1, 0, 0);
+        this->sinusoid_test(pos_sp, 0.1, step_start_time);
 
-        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
-            // this->check_if_at_setpoint();
-            current_setpoint_step++;
+        // if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
+        //     this->check_if_at_setpoint();
         break;
     }
+    // case 1: {
+    //     // Timer to wait for transients to end
+    //     static auto step_start_time = std::chrono::high_resolution_clock::now();
+
+    //     set_offboard_control_mode(BODY_RATE);
+    //     Eigen::Vector3d pos_sp(5, 5, -15);
+    //     test_gen.step_pos_setpoint(pos_sp);
+
+    //     if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15)
+    //         // this->check_if_at_setpoint();
+    //         current_setpoint_step++;
+    //     break;
+    // }
     // case 1: {
     //     // Setup timed finish
     //     static auto roll_step_start_time = std::chrono::high_resolution_clock::now();
@@ -375,7 +375,7 @@ void OffboardControl::sinusoid_test(const Eigen::Vector3d &amplitude_pos_sp, dou
                                     const std::chrono::high_resolution_clock::time_point &step_start_time) {
     test_gen.sinusoid_setpoint(amplitude_pos_sp, frequency);
 
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 10) {
+    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - step_start_time).count() >= 15) {
         current_setpoint_step++;
     }
 }

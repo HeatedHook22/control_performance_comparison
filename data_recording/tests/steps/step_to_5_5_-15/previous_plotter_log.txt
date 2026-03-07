@@ -1,0 +1,35 @@
+[INFO] [1772855058.741496729] [local_position_plotter]: Position Plotter Node started. Subscriptions initialized.
+[INFO] [1772855058.742201602] [local_position_plotter]: Recording data... Press Ctrl+C to stop and generate graphs.
+[INFO] [1772855074.065036210] [local_position_plotter]: Body Rate mode detected at t=15.30s. Tagging test region.
+[INFO] [1772855103.708345021] [local_position_plotter]: Disarm detected! Interrupting node to generate plots...
+
+[INFO] Recording stopped. Initiating plot export...
+[INFO] --- Starting Graph Generation ---
+[INFO] Exporting unified CSV -> data_recording/tmp/body_rate_test_region.csv
+[INFO] Processing Attitude metric...
+[INFO] Saved plot -> data_recording/tmp/run_attitude.png
+[INFO] Saved plot -> data_recording/tmp/run_attitude_cropped.png
+[INFO] Processing Body Rates metric...
+[INFO] Saved plot -> data_recording/tmp/run_rates.png
+[INFO] Saved plot -> data_recording/tmp/run_rates_cropped.png
+[INFO] Processing Position metric...
+[INFO] Saved plot -> data_recording/tmp/run_position.png
+[INFO] Saved plot -> data_recording/tmp/run_position_cropped.png
+
+===================================================================================================================
+                                     CURRENT RUN RMS SUMMARY (body_rate mode)                                      
+===================================================================================================================
+Metric          | Tracking RMS                   | Steady-State RMS               | Final Value                   
+-------------------------------------------------------------------------------------------------------------------
+Attitude (°):<15 | 8.3920, 4.8870, 5.8240         | 0.1060, 0.0080, 0.0220         | 0.1839, 0.1364, 90.0061       
+Body Rates (°/s):<15 | 35.5210, 24.7130, 15.9830      | 0.7310, 0.5830, 0.4430         | -0.0636, 0.0366, -0.0017      
+Position (m):<15 | 1.3290, 1.3520, 1.2540         | 0.0500, 0.0530, 0.0310         | 5.0041, 5.0066, -15.0162      
+===================================================================================================================
+[INFO] Summary appended to: data_recording/tmp/rms_summary_table.csv
+
+[INFO] Checking for comparison CSVs...
+[INFO] Found 2 CSVs. Generating overlay plots...
+[INFO] Saved plot -> data_recording/tmp/comparison_attitude.png
+[INFO] Saved plot -> data_recording/tmp/comparison_rates.png
+[INFO] Saved plot -> data_recording/tmp/comparison_position.png
+[INFO] --- Graph Generation Complete ---
