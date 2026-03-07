@@ -59,7 +59,7 @@ class data_recorder(Node):
             (VehicleRatesSetpoint, '/fmu/in/vehicle_rates_setpoint', self.rates_sp_cb),
             (VehicleOdometry, '/fmu/out/vehicle_odometry', self.rates_cb),
             (OffboardControlMode, '/fmu/in/offboard_control_mode', self.offboard_cb),
-            (VehicleStatus, '/fmu/out/vehicle_status_v2', self.status_cb)
+            (VehicleStatus, '/fmu/out/vehicle_status_v1', self.status_cb)
         ]
         for msg_type, topic, callback_function in self.subs:
             self.create_subscription(msg_type, topic, callback_function, qos)
@@ -230,7 +230,6 @@ class data_recorder(Node):
         summary_file = os.path.join(self.output_dir, "rms_summary_table.csv")
         file_exists = os.path.isfile(summary_file)
         
-        # Dynamically build headers from JSON
         headers = ["Timestamp", "Control Mode"]
         for metric in self.config['metrics']:
             for label in metric['axis_labels']:
@@ -238,9 +237,8 @@ class data_recorder(Node):
                 
         def format_value(val): return f"{val:.4f}" if val is not None else "N/A"
         
-        # Dynamically build row from JSON
         row = [time.strftime("%Y-%m-%d %H:%M:%S"), summary_data.get('mode', 'Unknown')]
-        row_dict = {} # Used for terminal printing
+        row_dict = {} 
         for metric in self.config['metrics']:
             for label in metric['axis_labels']:
                 trk_val = format_value(summary_data.get(f"{metric['name']}_{label}_Trk"))
@@ -265,7 +263,6 @@ class data_recorder(Node):
             labels = metric['axis_labels']
             unit = metric['measurement_unit']
             
-            # Print dynamically if it's a standard 3-axis metric
             if len(labels) == 3:
                 trk_str = f"{row_dict[f'{name}_{labels[0]}_Trk']}, {row_dict[f'{name}_{labels[1]}_Trk']}, {row_dict[f'{name}_{labels[2]}_Trk']}"
                 ss_str  = f"{row_dict[f'{name}_{labels[0]}_SS']}, {row_dict[f'{name}_{labels[1]}_SS']}, {row_dict[f'{name}_{labels[2]}_SS']}"
@@ -275,7 +272,6 @@ class data_recorder(Node):
         print(f"{'='*115}\n[INFO] Summary appended to: {summary_file}\n")
 
     def _get_plot_configurations(self):
-        """Maps JSON config sources to actual Python objects"""
         configs = []
         for m in self.config['metrics']:
             actual_container = getattr(self, m['actual_source'], Series3D())
@@ -287,7 +283,6 @@ class data_recorder(Node):
         print("[INFO] --- Starting Graph Generation ---")
         plot_configurations = self._get_plot_configurations()
         
-        # Safety check using the first metric in the JSON
         first_metric_actual = plot_configurations[0][6]
         if not first_metric_actual.t: 
             print("[INFO] No live data recorded. Skipping new plot generation and CSV export.")
@@ -367,6 +362,11 @@ class data_recorder(Node):
             csv_writer.writerows(itertools.zip_longest(*csv_columns.values(), fillvalue=''))
 
     def generate_comparison_graphs(self, plot_configurations):
+        # --- CONFIGURATION TOGGLE ---
+        # Set to False to remove vertical lines and shaded bands from comparison plots
+        SHOW_OVERLAY_ERROR_BANDS = True 
+        # ----------------------------
+
         print("[INFO] Checking for comparison CSVs...")
         
         def load_comparison_csv(filepath):
@@ -380,7 +380,6 @@ class data_recorder(Node):
                             data_dictionary[headers[index]].append(float(value))
             return {key: np.array(value) for key, value in data_dictionary.items()}
             
-        # Load all comparison files defined in JSON
         comparison_datasets = []
         for comp_mode in self.config.get('comparison_modes', []):
             if os.path.exists(comp_mode['file_path']):
@@ -406,10 +405,19 @@ class data_recorder(Node):
                 tracking_rms_values, steady_state_rms_values, steady_state_start_times, final_values, tolerance_values = self.evaluate_run_metrics(
                     actual_times_list, actual_data_list, setpoint_times_list, setpoint_data_list, 0, None, measurement_unit)
                 
-                comparison_runs.append({
-                    'actual_times': actual_times_list, 'actual_data': actual_data_list, 'sp_times': setpoint_times_list, 'sp_data': setpoint_data_list, 
-                    'color': plot_color, 'label_prefix': label_prefix, 'tracking_rms_vals': tracking_rms_values, 'steady_state_rms_vals': steady_state_rms_values
-                })
+                run_dict = {
+                    'actual_times': actual_times_list, 'actual_data': actual_data_list, 
+                    'sp_times': setpoint_times_list, 'sp_data': setpoint_data_list, 
+                    'color': plot_color, 'label_prefix': label_prefix, 
+                    'tracking_rms_vals': tracking_rms_values, 'steady_state_rms_vals': steady_state_rms_values
+                }
+                
+                # Check the toggle before drawing the visuals
+                if SHOW_OVERLAY_ERROR_BANDS:
+                    run_dict['rms_starts'] = steady_state_start_times
+                    run_dict['tolerances'] = tolerance_values
+                    
+                comparison_runs.append(run_dict)
             
             if comparison_runs: 
                 comp_plot_path = os.path.join(self.output_dir, f"comparison_{csv_prefix.lower()}.png")
