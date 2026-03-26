@@ -436,6 +436,7 @@ def main():
     finally: 
         print("\n[INFO] Recording stopped. Initiating plot export...")
         node.generate_graphs()
+        # plt.show()
         node.destroy_node()
         if rclpy.ok(): 
             rclpy.shutdown()

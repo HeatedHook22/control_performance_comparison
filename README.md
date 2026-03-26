@@ -39,9 +39,8 @@ add following contents in the end, replace <user> by your user name:
 ```
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
-export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/<user>/ros2_ws/src/setup/models
-export GAZEBO_PLUGIN_PATH=~/PX4-Autopilot/build/px4_sitl_default/build_gazebo-classic:$GAZEBO_PLUGIN_PATH:
-export IGN_GAZEBO_RESOURCE_PATH=$IGN_GAZEBO_RESOURCE_PATH:/home/<user>/ros2_ws/src/setup/models
+export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/heated_2204/nonlin_ctrl_lab/control_performance_comparison/models
+export GAZEBO_PLUGIN_PATH=$GAZEBO_PLUGIN_PATH:/home/heated_2204/nonlin_ctrl_lab/control_performance_comparison/plugins
 ```
 
 ### 4. Modify empty.world
@@ -62,7 +61,9 @@ Add the following inside <world> block:
 ### 1. Launch SITL environment
 In a new terminal:
 ```
-ros2 launch bare_quad_sim init.launch.py
+ros2 launch bare_quad_sim/launch/init.launch.py
+ros2 launch bare_quad_sim/launch/init.launch.py world:=dual_iris_sim.world
+ros2 launch bare_quad_sim/launch/init.launch.py world:=windy.world
 ```  
 And click the start icon in gazebo
 
